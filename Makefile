@@ -1,7 +1,7 @@
 # shrike — minimal ROP gadget finder for x86-64 ELF64
 # Targets:
 #   make            build the shrike binary
-#   make test       run unit + integration tests (sprint 2+)
+#   make test       run unit + integration tests
 #   make clean
 
 CC       ?= cc
@@ -12,9 +12,7 @@ CFLAGS   += $(CSTD) $(WARN) $(OPT) -Iinclude -D_GNU_SOURCE
 LDFLAGS  +=
 LDLIBS   +=
 
-# Sprint 1 only ships the ELF loader and a CLI stub. Sprint 2 adds xdec.c,
-# sprint 3 adds scan.c and format.c; the Makefile grows with each.
-SRC := src/elf64.c src/main.c
+SRC := src/elf64.c src/xdec.c src/scan.c src/format.c src/main.c
 OBJ := $(SRC:.c=.o)
 BIN := shrike
 
@@ -29,11 +27,11 @@ $(BIN): $(OBJ)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 test: $(BIN)
-	@[ -d tests ] && $(MAKE) -C tests run || echo "no tests yet"
+	$(MAKE) -C tests run
 
 clean:
 	rm -f $(OBJ) $(BIN)
-	@[ -d tests ] && $(MAKE) -C tests clean 2>/dev/null || true
+	$(MAKE) -C tests clean
 
 install: $(BIN)
 	install -Dm755 $(BIN) $(DESTDIR)/usr/local/bin/$(BIN)
