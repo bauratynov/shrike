@@ -1,0 +1,15 @@
+*.o
+*.obj
+*.a
+*.so
+*.dll
+*.exe
+shrike
+tests/test_*
+!tests/test_*.c
+tests/fixtures/bin_*
+.vscode/
+.idea/
+*.swp
+.DS_Store
+build/
