@@ -1,0 +1,62 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-test:
+    name: build + test (${{ matrix.os }} / ${{ matrix.cc }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+        cc: [gcc, clang]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: compiler version
+        run: ${{ matrix.cc }} --version
+      - name: build
+        run: make CC=${{ matrix.cc }}
+      - name: unit tests
+        run: make test CC=${{ matrix.cc }}
+      - name: smoke (audit /bin/ls)
+        run: ./shrike --quiet /bin/ls
+
+  integration:
+    name: integration (real distro binaries)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: build
+        run: make
+      - name: integration
+        run: ./tests/integration.sh
+
+  static-analysis:
+    name: cppcheck
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y cppcheck
+      - name: cppcheck
+        run: |
+          cppcheck --std=c99 --enable=warning,performance,portability \
+                   --error-exitcode=1 --quiet \
+                   -Iinclude src/ tests/
+
+  sanitizers:
+    name: ASan + UBSan
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: sanitized build + unit tests
+        run: |
+          make -C tests clean
+          make -C tests run \
+            CC=clang \
+            CFLAGS="-std=c99 -Wall -Wextra -O1 -g -I../include \
+                    -fsanitize=address,undefined -fno-omit-frame-pointer"

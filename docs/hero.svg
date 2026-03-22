@@ -1,0 +1,225 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 320" role="img" aria-labelledby="sht shd">
+  <title id="sht">shrike — gadget density heatmap and discovered-gadget list</title>
+  <desc  id="shd">
+    On the left, a listing of eight ROP gadgets the scanner discovered
+    in a demo .text section, each printed as address + mnemonic chain.
+    On the right, a heatmap of gadget density across a .text section:
+    bright cells are regions with many reachable ret-terminated chains.
+  </desc>
+
+  <style><![CDATA[
+    .bg     { fill:#0d1117; }
+    .panel  { fill:#161b22; stroke:#30363d; }
+    .addr   { fill:#f85149; font:12px ui-monospace,Menlo,monospace; }
+    .mnemo  { fill:#e6edf3; font:12px ui-monospace,Menlo,monospace; }
+    .term   { fill:#f85149; font:bold 12px ui-monospace,Menlo,monospace; }
+    .title  { fill:#e6edf3; font:bold 13px ui-monospace,Menlo,monospace; }
+    .sub    { fill:#7d8590; font:11px ui-monospace,Menlo,monospace; }
+    .badge  { fill:#3fb950; font:bold 12px ui-monospace,Menlo,monospace; }
+  ]]></style>
+
+  <!-- heatmap cell shades (6 levels: dim -> bright red) -->
+  <defs>
+    <rect id="hcA" width="11" height="11" fill="#1f1612"/>
+    <rect id="hcB" width="11" height="11" fill="#2a1b18"/>
+    <rect id="hcC" width="11" height="11" fill="#3a1f1a"/>
+    <rect id="hcD" width="11" height="11" fill="#5a2420"/>
+    <rect id="hcE" width="11" height="11" fill="#8a3028"/>
+    <rect id="hcF" width="11" height="11" fill="#c53c30"/>
+    <rect id="hcG" width="11" height="11" fill="#f85149"/>
+  </defs>
+
+  <rect class="bg" width="820" height="320"/>
+
+  <!-- LEFT: gadget list -->
+  <text x="20" y="24" class="title">shrike --max-insn 5 /bin/ls</text>
+  <text x="20" y="42" class="sub">— discovered gadgets (excerpt) —</text>
+
+  <g transform="translate(20,58)" font-family="ui-monospace,Menlo,monospace" font-size="12">
+    <g><text class="addr" x="0" y="14">0x000040a5f8:</text>
+       <text class="mnemo" x="118" y="14">pop rdi ; </text>
+       <text class="term" x="200" y="14">ret</text></g>
+    <g><text class="addr" x="0" y="34">0x000040a6a3:</text>
+       <text class="mnemo" x="118" y="34">pop rsi ; pop r15 ; </text>
+       <text class="term" x="290" y="34">ret</text></g>
+    <g><text class="addr" x="0" y="54">0x000040ac21:</text>
+       <text class="mnemo" x="118" y="54">xor rax, rax ; </text>
+       <text class="term" x="232" y="54">ret</text></g>
+    <g><text class="addr" x="0" y="74">0x000040b17c:</text>
+       <text class="mnemo" x="118" y="74">mov rax, rdi ; </text>
+       <text class="term" x="232" y="74">ret</text></g>
+    <g><text class="addr" x="0" y="94">0x000040b4e0:</text>
+       <text class="mnemo" x="118" y="94">add rsp, 0x28 ; </text>
+       <text class="term" x="243" y="94">ret</text></g>
+    <g><text class="addr" x="0" y="114">0x000040c3a0:</text>
+       <text class="mnemo" x="118" y="114">pop rbp ; pop r12 ; </text>
+       <text class="term" x="290" y="114">ret</text></g>
+    <g><text class="addr" x="0" y="134">0x000040d128:</text>
+       <text class="mnemo" x="118" y="134">leave ; </text>
+       <text class="term" x="180" y="134">ret</text></g>
+    <g><text class="addr" x="0" y="154">0x000040d4fc:</text>
+       <text class="mnemo" x="118" y="154">mov rsp, rbp ; </text>
+       <text class="term" x="232" y="154">ret</text></g>
+    <g><text class="addr" x="0" y="174">0x000040e224:</text>
+       <text class="mnemo" x="118" y="174">syscall ; </text>
+       <text class="term" x="195" y="174">ret</text></g>
+  </g>
+
+  <!-- footer: summary -->
+  <g transform="translate(20,260)">
+    <rect class="panel" width="420" height="42"/>
+    <text x="16" y="18" class="sub">summary</text>
+    <text x="16" y="34" class="mnemo">gadgets: </text>
+    <text x="90" y="34" class="badge">1 284</text>
+    <text x="150" y="34" class="mnemo"> · unique terminators: </text>
+    <text x="320" y="34" class="badge">312</text>
+  </g>
+
+  <!-- RIGHT: gadget density heatmap -->
+  <text x="460" y="24" class="title">gadget density across .text</text>
+  <text x="460" y="42" class="sub">rows = 4 KB address bands · cols = 512 B buckets · colour = gadgets / bucket</text>
+
+  <g transform="translate(460,58)">
+    <rect class="panel" width="340" height="220"/>
+    <g transform="translate(10,10)">
+      <!-- 15 rows × 25 cols of cells, pattern simulates real distribution:
+           more gadgets in prologue/epilogue-heavy regions.           -->
+      <g transform="translate(0,0)">
+        <use href="#hcA" x="0"/><use href="#hcB" x="12"/><use href="#hcA" x="24"/><use href="#hcC" x="36"/>
+        <use href="#hcB" x="48"/><use href="#hcD" x="60"/><use href="#hcA" x="72"/><use href="#hcC" x="84"/>
+        <use href="#hcE" x="96"/><use href="#hcB" x="108"/><use href="#hcC" x="120"/><use href="#hcA" x="132"/>
+        <use href="#hcB" x="144"/><use href="#hcF" x="156"/><use href="#hcD" x="168"/><use href="#hcA" x="180"/>
+        <use href="#hcB" x="192"/><use href="#hcC" x="204"/><use href="#hcA" x="216"/><use href="#hcB" x="228"/>
+        <use href="#hcA" x="240"/><use href="#hcC" x="252"/><use href="#hcB" x="264"/><use href="#hcA" x="276"/>
+        <use href="#hcB" x="288"/>
+      </g>
+      <g transform="translate(0,13)">
+        <use href="#hcB" x="0"/><use href="#hcC" x="12"/><use href="#hcE" x="24"/><use href="#hcF" x="36"/>
+        <use href="#hcD" x="48"/><use href="#hcB" x="60"/><use href="#hcC" x="72"/><use href="#hcE" x="84"/>
+        <use href="#hcF" x="96"/><use href="#hcG" x="108"/><use href="#hcE" x="120"/><use href="#hcC" x="132"/>
+        <use href="#hcB" x="144"/><use href="#hcA" x="156"/><use href="#hcB" x="168"/><use href="#hcC" x="180"/>
+        <use href="#hcD" x="192"/><use href="#hcE" x="204"/><use href="#hcD" x="216"/><use href="#hcC" x="228"/>
+        <use href="#hcA" x="240"/><use href="#hcB" x="252"/><use href="#hcC" x="264"/><use href="#hcB" x="276"/>
+        <use href="#hcA" x="288"/>
+      </g>
+      <g transform="translate(0,26)">
+        <use href="#hcC" x="0"/><use href="#hcE" x="12"/><use href="#hcF" x="24"/><use href="#hcG" x="36"/>
+        <use href="#hcE" x="48"/><use href="#hcC" x="60"/><use href="#hcB" x="72"/><use href="#hcD" x="84"/>
+        <use href="#hcG" x="96"/><use href="#hcG" x="108"/><use href="#hcF" x="120"/><use href="#hcE" x="132"/>
+        <use href="#hcC" x="144"/><use href="#hcA" x="156"/><use href="#hcA" x="168"/><use href="#hcB" x="180"/>
+        <use href="#hcE" x="192"/><use href="#hcF" x="204"/><use href="#hcE" x="216"/><use href="#hcB" x="228"/>
+        <use href="#hcA" x="240"/><use href="#hcC" x="252"/><use href="#hcD" x="264"/><use href="#hcC" x="276"/>
+        <use href="#hcB" x="288"/>
+      </g>
+      <g transform="translate(0,39)">
+        <use href="#hcB" x="0"/><use href="#hcC" x="12"/><use href="#hcD" x="24"/><use href="#hcE" x="36"/>
+        <use href="#hcF" x="48"/><use href="#hcD" x="60"/><use href="#hcC" x="72"/><use href="#hcB" x="84"/>
+        <use href="#hcD" x="96"/><use href="#hcF" x="108"/><use href="#hcG" x="120"/><use href="#hcF" x="132"/>
+        <use href="#hcD" x="144"/><use href="#hcC" x="156"/><use href="#hcB" x="168"/><use href="#hcC" x="180"/>
+        <use href="#hcE" x="192"/><use href="#hcG" x="204"/><use href="#hcE" x="216"/><use href="#hcC" x="228"/>
+        <use href="#hcB" x="240"/><use href="#hcA" x="252"/><use href="#hcB" x="264"/><use href="#hcC" x="276"/>
+        <use href="#hcB" x="288"/>
+      </g>
+      <g transform="translate(0,52)">
+        <use href="#hcA" x="0"/><use href="#hcB" x="12"/><use href="#hcC" x="24"/><use href="#hcD" x="36"/>
+        <use href="#hcE" x="48"/><use href="#hcC" x="60"/><use href="#hcB" x="72"/><use href="#hcA" x="84"/>
+        <use href="#hcC" x="96"/><use href="#hcE" x="108"/><use href="#hcF" x="120"/><use href="#hcE" x="132"/>
+        <use href="#hcC" x="144"/><use href="#hcB" x="156"/><use href="#hcA" x="168"/><use href="#hcB" x="180"/>
+        <use href="#hcD" x="192"/><use href="#hcF" x="204"/><use href="#hcD" x="216"/><use href="#hcB" x="228"/>
+        <use href="#hcA" x="240"/><use href="#hcC" x="252"/><use href="#hcB" x="264"/><use href="#hcA" x="276"/>
+        <use href="#hcA" x="288"/>
+      </g>
+      <g transform="translate(0,65)">
+        <use href="#hcB" x="0"/><use href="#hcD" x="12"/><use href="#hcF" x="24"/><use href="#hcG" x="36"/>
+        <use href="#hcF" x="48"/><use href="#hcD" x="60"/><use href="#hcC" x="72"/><use href="#hcB" x="84"/>
+        <use href="#hcD" x="96"/><use href="#hcE" x="108"/><use href="#hcG" x="120"/><use href="#hcG" x="132"/>
+        <use href="#hcE" x="144"/><use href="#hcC" x="156"/><use href="#hcB" x="168"/><use href="#hcC" x="180"/>
+        <use href="#hcE" x="192"/><use href="#hcG" x="204"/><use href="#hcF" x="216"/><use href="#hcC" x="228"/>
+        <use href="#hcB" x="240"/><use href="#hcC" x="252"/><use href="#hcD" x="264"/><use href="#hcB" x="276"/>
+        <use href="#hcA" x="288"/>
+      </g>
+      <g transform="translate(0,78)">
+        <use href="#hcA" x="0"/><use href="#hcC" x="12"/><use href="#hcE" x="24"/><use href="#hcF" x="36"/>
+        <use href="#hcD" x="48"/><use href="#hcB" x="60"/><use href="#hcA" x="72"/><use href="#hcB" x="84"/>
+        <use href="#hcC" x="96"/><use href="#hcE" x="108"/><use href="#hcF" x="120"/><use href="#hcE" x="132"/>
+        <use href="#hcD" x="144"/><use href="#hcB" x="156"/><use href="#hcA" x="168"/><use href="#hcB" x="180"/>
+        <use href="#hcC" x="192"/><use href="#hcE" x="204"/><use href="#hcD" x="216"/><use href="#hcC" x="228"/>
+        <use href="#hcB" x="240"/><use href="#hcA" x="252"/><use href="#hcC" x="264"/><use href="#hcB" x="276"/>
+        <use href="#hcA" x="288"/>
+      </g>
+      <g transform="translate(0,91)">
+        <use href="#hcB" x="0"/><use href="#hcD" x="12"/><use href="#hcE" x="24"/><use href="#hcE" x="36"/>
+        <use href="#hcC" x="48"/><use href="#hcB" x="60"/><use href="#hcC" x="72"/><use href="#hcE" x="84"/>
+        <use href="#hcG" x="96"/><use href="#hcG" x="108"/><use href="#hcE" x="120"/><use href="#hcC" x="132"/>
+        <use href="#hcB" x="144"/><use href="#hcA" x="156"/><use href="#hcB" x="168"/><use href="#hcD" x="180"/>
+        <use href="#hcF" x="192"/><use href="#hcG" x="204"/><use href="#hcE" x="216"/><use href="#hcC" x="228"/>
+        <use href="#hcB" x="240"/><use href="#hcC" x="252"/><use href="#hcB" x="264"/><use href="#hcA" x="276"/>
+        <use href="#hcA" x="288"/>
+      </g>
+      <g transform="translate(0,104)">
+        <use href="#hcA" x="0"/><use href="#hcB" x="12"/><use href="#hcC" x="24"/><use href="#hcB" x="36"/>
+        <use href="#hcA" x="48"/><use href="#hcB" x="60"/><use href="#hcC" x="72"/><use href="#hcD" x="84"/>
+        <use href="#hcE" x="96"/><use href="#hcD" x="108"/><use href="#hcC" x="120"/><use href="#hcB" x="132"/>
+        <use href="#hcA" x="144"/><use href="#hcB" x="156"/><use href="#hcC" x="168"/><use href="#hcE" x="180"/>
+        <use href="#hcD" x="192"/><use href="#hcC" x="204"/><use href="#hcB" x="216"/><use href="#hcA" x="228"/>
+        <use href="#hcB" x="240"/><use href="#hcC" x="252"/><use href="#hcB" x="264"/><use href="#hcA" x="276"/>
+        <use href="#hcA" x="288"/>
+      </g>
+      <g transform="translate(0,117)">
+        <use href="#hcB" x="0"/><use href="#hcC" x="12"/><use href="#hcD" x="24"/><use href="#hcC" x="36"/>
+        <use href="#hcB" x="48"/><use href="#hcC" x="60"/><use href="#hcE" x="72"/><use href="#hcF" x="84"/>
+        <use href="#hcG" x="96"/><use href="#hcE" x="108"/><use href="#hcC" x="120"/><use href="#hcB" x="132"/>
+        <use href="#hcA" x="144"/><use href="#hcA" x="156"/><use href="#hcB" x="168"/><use href="#hcD" x="180"/>
+        <use href="#hcE" x="192"/><use href="#hcD" x="204"/><use href="#hcC" x="216"/><use href="#hcB" x="228"/>
+        <use href="#hcA" x="240"/><use href="#hcC" x="252"/><use href="#hcB" x="264"/><use href="#hcA" x="276"/>
+        <use href="#hcA" x="288"/>
+      </g>
+      <g transform="translate(0,130)">
+        <use href="#hcA" x="0"/><use href="#hcB" x="12"/><use href="#hcC" x="24"/><use href="#hcE" x="36"/>
+        <use href="#hcE" x="48"/><use href="#hcD" x="60"/><use href="#hcC" x="72"/><use href="#hcD" x="84"/>
+        <use href="#hcE" x="96"/><use href="#hcC" x="108"/><use href="#hcB" x="120"/><use href="#hcA" x="132"/>
+        <use href="#hcA" x="144"/><use href="#hcB" x="156"/><use href="#hcC" x="168"/><use href="#hcB" x="180"/>
+        <use href="#hcB" x="192"/><use href="#hcC" x="204"/><use href="#hcB" x="216"/><use href="#hcA" x="228"/>
+        <use href="#hcA" x="240"/><use href="#hcB" x="252"/><use href="#hcA" x="264"/><use href="#hcA" x="276"/>
+        <use href="#hcA" x="288"/>
+      </g>
+      <g transform="translate(0,143)">
+        <use href="#hcA" x="0"/><use href="#hcA" x="12"/><use href="#hcB" x="24"/><use href="#hcC" x="36"/>
+        <use href="#hcB" x="48"/><use href="#hcA" x="60"/><use href="#hcA" x="72"/><use href="#hcB" x="84"/>
+        <use href="#hcD" x="96"/><use href="#hcE" x="108"/><use href="#hcD" x="120"/><use href="#hcC" x="132"/>
+        <use href="#hcB" x="144"/><use href="#hcA" x="156"/><use href="#hcB" x="168"/><use href="#hcC" x="180"/>
+        <use href="#hcB" x="192"/><use href="#hcA" x="204"/><use href="#hcA" x="216"/><use href="#hcB" x="228"/>
+        <use href="#hcA" x="240"/><use href="#hcA" x="252"/><use href="#hcA" x="264"/><use href="#hcA" x="276"/>
+        <use href="#hcA" x="288"/>
+      </g>
+      <g transform="translate(0,156)">
+        <use href="#hcB" x="0"/><use href="#hcB" x="12"/><use href="#hcC" x="24"/><use href="#hcB" x="36"/>
+        <use href="#hcA" x="48"/><use href="#hcB" x="60"/><use href="#hcD" x="72"/><use href="#hcE" x="84"/>
+        <use href="#hcF" x="96"/><use href="#hcG" x="108"/><use href="#hcF" x="120"/><use href="#hcD" x="132"/>
+        <use href="#hcB" x="144"/><use href="#hcA" x="156"/><use href="#hcA" x="168"/><use href="#hcB" x="180"/>
+        <use href="#hcC" x="192"/><use href="#hcB" x="204"/><use href="#hcA" x="216"/><use href="#hcA" x="228"/>
+        <use href="#hcB" x="240"/><use href="#hcC" x="252"/><use href="#hcB" x="264"/><use href="#hcA" x="276"/>
+        <use href="#hcA" x="288"/>
+      </g>
+      <g transform="translate(0,169)">
+        <use href="#hcA" x="0"/><use href="#hcA" x="12"/><use href="#hcB" x="24"/><use href="#hcA" x="36"/>
+        <use href="#hcA" x="48"/><use href="#hcB" x="60"/><use href="#hcC" x="72"/><use href="#hcD" x="84"/>
+        <use href="#hcE" x="96"/><use href="#hcD" x="108"/><use href="#hcC" x="120"/><use href="#hcB" x="132"/>
+        <use href="#hcA" x="144"/><use href="#hcA" x="156"/><use href="#hcA" x="168"/><use href="#hcB" x="180"/>
+        <use href="#hcC" x="192"/><use href="#hcB" x="204"/><use href="#hcA" x="216"/><use href="#hcA" x="228"/>
+        <use href="#hcA" x="240"/><use href="#hcB" x="252"/><use href="#hcA" x="264"/><use href="#hcA" x="276"/>
+        <use href="#hcA" x="288"/>
+      </g>
+      <g transform="translate(0,182)">
+        <use href="#hcA" x="0"/><use href="#hcA" x="12"/><use href="#hcA" x="24"/><use href="#hcB" x="36"/>
+        <use href="#hcB" x="48"/><use href="#hcA" x="60"/><use href="#hcA" x="72"/><use href="#hcB" x="84"/>
+        <use href="#hcC" x="96"/><use href="#hcB" x="108"/><use href="#hcA" x="120"/><use href="#hcA" x="132"/>
+        <use href="#hcA" x="144"/><use href="#hcA" x="156"/><use href="#hcA" x="168"/><use href="#hcA" x="180"/>
+        <use href="#hcB" x="192"/><use href="#hcA" x="204"/><use href="#hcA" x="216"/><use href="#hcA" x="228"/>
+        <use href="#hcA" x="240"/><use href="#hcA" x="252"/><use href="#hcA" x="264"/><use href="#hcA" x="276"/>
+        <use href="#hcA" x="288"/>
+      </g>
+    </g>
+  </g>
+</svg>
