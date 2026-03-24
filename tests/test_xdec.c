@@ -111,7 +111,14 @@ int main(void)
     CASE("truncated REX",   -1, 0x48);
     CASE("truncated MOV64", -1, 0x48, 0xB8, 0x00, 0x00);
     CASE("truncated Jcc32", -1, 0x0F, 0x84, 0x00);
-    CASE("empty",           -1);
+
+    /* empty input: call xdec_length directly with size 0 */
+    {
+        int got = 999;
+        int rc = xdec_length(NULL, 0, &got);
+        if (rc < 0) { passes++; printf("  [ok]   empty input rejected\n"); }
+        else { fails++; printf("  [FAIL] empty input: rc=%d got=%d\n", rc, got); }
+    }
 
     printf("\ninvalid in 64-bit\n");
     CASE("PUSH ES (06)",    -1, 0x06);

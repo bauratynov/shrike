@@ -31,7 +31,7 @@ static void print_cb(const elf64_segment_t *seg,
     (void)seg;
     print_ctx_t *pc = (print_ctx_t *)ctx;
     pc->total++;
-    format_gadget(pc->out, g);
+    if (pc->out) format_gadget(pc->out, g);
 }
 
 static void usage(const char *prog)
@@ -101,13 +101,14 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    print_ctx_t pc = { 0, stdout };
-    FILE *out = quiet ? stderr : stdout;
+    /* In quiet mode pc.out is NULL, so print_cb still counts but
+     * emits nothing — the only thing on stdout is the summary line. */
+    print_ctx_t pc = { 0, quiet ? NULL : stdout };
 
     if (!quiet) {
-        fprintf(out, "# file: %s\n", path);
-        fprintf(out, "# type: %s  entry: 0x%" PRIx64
-                     "  segments: %zu\n",
+        fprintf(stdout, "# file: %s\n", path);
+        fprintf(stdout, "# type: %s  entry: 0x%" PRIx64
+                        "  segments: %zu\n",
                 e.is_dyn ? "ET_DYN" : "ET_EXEC",
                 e.entry, e.nseg);
     }
@@ -115,8 +116,8 @@ int main(int argc, char **argv)
     for (size_t i = 0; i < e.nseg; i++) {
         const elf64_segment_t *s = &e.segs[i];
         if (!quiet) {
-            fprintf(out, "# segment[%zu]: vaddr=0x%016" PRIx64
-                         "  bytes=%zu\n", i, s->vaddr, s->size);
+            fprintf(stdout, "# segment[%zu]: vaddr=0x%016" PRIx64
+                            "  bytes=%zu\n", i, s->vaddr, s->size);
         }
         scan_segment(s, &cfg, print_cb, &pc);
     }
