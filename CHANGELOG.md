@@ -3,6 +3,32 @@
 All notable changes to `shrike` are listed here. Project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] — 2026-04-18
+
+Quality-of-life improvements for real-world use.
+
+### Added
+- **`--filter PATTERN`** — only emit gadgets whose rendered
+  mnemonic line contains the substring `PATTERN`. Enables
+  one-liners like `shrike /bin/ls --filter 'pop rdi ; ret'`.
+- **`--unique`** — de-duplicate gadgets by mnemonic text. Backed
+  by an open-addressed FNV-1a hash set in `src/strset.c`. First
+  occurrence wins; identical chains at different addresses
+  collapse to one line.
+- **`--limit N`** — stop after emitting N gadgets. Short-circuits
+  the scanner, so auditing huge binaries for the first match of a
+  filter returns quickly.
+- **Mnemonic coverage** — the formatter now recognises `lea r, [r+d8]`,
+  all sixteen `cmovcc reg, reg` forms, `shld`/`shrd` with imm8,
+  and the `bt`/`bts`/`btr`/`btc` family via Group 8.
+
+### Changed
+- Internal `format.c` now renders via a small stack-allocated
+  `strbuf_t` instead of emitting directly to `FILE*`. The public
+  `format_gadget()` and `format_gadget_insns()` keep the same
+  shape; a new `format_gadget_render(buf, len)` returns the
+  mnemonic line as a string (used by `--filter` and `--unique`).
+
 ## [0.1.0] — 2026-04-18
 
 Initial public release. First end-to-end usable slice.

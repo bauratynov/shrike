@@ -16,8 +16,8 @@ decoder, and enumerates return-terminated gadget sequences.
 Named after the shrike — a songbird that impales its prey on thorns
 for later retrieval. Appropriate.
 
-> **Status:** v0.1.0 — ELF loader, length decoder, scanner,
-> formatter, CLI, CI. See [CHANGELOG.md](CHANGELOG.md).
+> **Status:** v0.2.0 — filter, dedup, limit, expanded mnemonics.
+> See [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
@@ -66,8 +66,14 @@ make
 # Only plain RET-terminated gadgets (skip syscall / int / indirect)
 ./shrike --no-syscall --no-int --no-ind /bin/ls
 
-# Search for a specific gadget
-./shrike /bin/ls | grep 'pop rdi ; ret'
+# v0.2.0: search for a specific gadget without shelling through grep
+./shrike --filter 'pop rdi ; ret' /bin/bash
+
+# v0.2.0: one copy of each distinct chain, stop after 50
+./shrike --unique --limit 50 /bin/bash
+
+# Useful composition: every unique "pop rXX ; ret" chain
+./shrike --unique --filter 'pop ' --filter-ret-tail /bin/ls  # conceptual
 ```
 
 Example output:
@@ -118,8 +124,9 @@ shrike/
 - [x] Sprint 2: x86-64 length decoder + unit tests
 - [x] Sprint 3: gadget scanner + mnemonic printer
 - [x] Sprint 4: CI + integration tests + v0.1.0
-- [ ] Sprint 5: de-duplication by mnemonic hash + filter expressions
-- [ ] Sprint 6: ARM64 support (sibling length decoder)
+- [x] v0.2.0: `--filter` / `--unique` / `--limit` + more mnemonics
+- [ ] v0.3.0: regex filter, CET-aware classification, colour output
+- [ ] v0.4.0: ARM64 support (sibling length decoder)
 
 ## Companion tools
 

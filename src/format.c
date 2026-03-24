@@ -1,19 +1,67 @@
 /*
  * format.c — tiny x86-64 mnemonic printer.
  *
- * We recognise a vocabulary of ~30 opcodes that cover the majority
- * of gadget bodies: push/pop, mov reg/reg, arithmetic between
- * registers, call/ret/jmp, syscall, nop, leave. For anything else
- * we fall back to "db 0x..." so the output stays readable without
- * turning this file into a full disassembler.
+ * Recognised (v0.2.0):
+ *   push/pop reg (50-57, 58-5F)
+ *   nop (90), xchg rAX, reg (91-97)
+ *   ret / retf (C3, CB), ret imm16 / retf imm16 (C2, CA)
+ *   leave (C9), int3 (CC), int imm8 (CD)
+ *   jmp rel8/rel32 (EB, E9), call rel32 (E8)
+ *   jmp/call indirect (FF /2..5)
+ *   mov r,imm (B0-BF)
+ *   mov reg, reg  (89, 8B mod=11)
+ *   xor reg, reg  (31, 33 mod=11)
+ *   add reg, reg  (01, 03 mod=11)
+ *   lea reg, [reg+disp8]  (8D with mod=01 and rm != 4)
+ *   cmovcc reg, reg       (0F 40-4F mod=11)
+ *   shld r/m, r, imm8     (0F A4)
+ *   shrd r/m, r, imm8     (0F AC)
+ *   bt/bts/btr/btc r/m, imm8 (0F BA + reg field)
+ *   hlt (F4), syscall (0F 05), sysret (0F 07)
+ *
+ * Everything else → "db 0x.., 0x.." fallback.
  */
 
 #include "format.h"
 #include "xdec.h"
 
 #include <inttypes.h>
+#include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
+
+/* --- tiny strbuf with overflow flag, no heap --- */
+
+typedef struct {
+    char   *buf;
+    size_t  cap;
+    size_t  len;
+    int     overflowed;
+} strbuf_t;
+
+static void sb_vprintf(strbuf_t *sb, const char *fmt, va_list ap)
+{
+    if (sb->overflowed || sb->cap == 0) return;
+    size_t remaining = sb->cap - sb->len;
+    int n = vsnprintf(sb->buf + sb->len, remaining, fmt, ap);
+    if (n < 0 || (size_t)n >= remaining) {
+        sb->overflowed = 1;
+        if (sb->cap > 0) sb->buf[sb->cap - 1] = '\0';
+        return;
+    }
+    sb->len += (size_t)n;
+}
+
+static void sb_printf(strbuf_t *sb, const char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    sb_vprintf(sb, fmt, ap);
+    va_end(ap);
+}
+
+/* --- register name tables --- */
 
 static const char *reg64[8] = {
     "rax", "rcx", "rdx", "rbx", "rsp", "rbp", "rsi", "rdi"
@@ -30,97 +78,98 @@ static const char *reg8_nohi[8] = {
 
 static const char *pick_reg(int w, int b16, int b8, int rex, int idx)
 {
-    if (w)          return reg64[idx & 7];
-    if (b16)        return reg16[idx & 7];
-    if (b8)         return reg8_nohi[idx & 7];
-    if (rex)        return reg64[idx & 7];
+    if (w)   return reg64[idx & 7];
+    if (b16) return reg16[idx & 7];
+    if (b8)  return reg8_nohi[idx & 7];
+    if (rex) return reg64[idx & 7];
     return reg32[idx & 7];
 }
 
-/* Print one decoded instruction to `f`. Returns the length consumed
- * (so the caller can advance). Returns <= 0 on decode failure. */
-static int emit_one(FILE *f, const uint8_t *buf, size_t max)
+static const char *cmov_cc[16] = {
+    "cmovo",  "cmovno", "cmovb",  "cmovnb", "cmovz",  "cmovnz",
+    "cmovbe", "cmova",  "cmovs",  "cmovns", "cmovp",  "cmovnp",
+    "cmovl",  "cmovnl", "cmovle", "cmovg"
+};
+
+static const char *bt_grp[4] = { "bt", "bts", "btr", "btc" };
+
+/* --- per-instruction emission --- */
+
+/* Returns length consumed; 0 or -1 on decode failure. */
+static int emit_one(strbuf_t *sb, const uint8_t *buf, size_t max)
 {
     xdec_info_t info;
     if (xdec_full(buf, max, &info) < 0) return -1;
 
-    uint8_t op = info.opcode;
-    int     w  = info.rex_w;
+    uint8_t op   = info.opcode;
+    int     w    = info.rex_w;
     int     op66 = info.op66;
 
     if (info.map == 1) {
         /* PUSH reg (0x50 - 0x57) */
         if (op >= 0x50 && op <= 0x57) {
-            fprintf(f, "push %s", pick_reg(1, op66, 0, info.rex, op - 0x50));
+            sb_printf(sb, "push %s", pick_reg(1, op66, 0, info.rex, op - 0x50));
             return info.length;
         }
         /* POP reg (0x58 - 0x5F) */
         if (op >= 0x58 && op <= 0x5F) {
-            fprintf(f, "pop %s", pick_reg(1, op66, 0, info.rex, op - 0x58));
+            sb_printf(sb, "pop %s", pick_reg(1, op66, 0, info.rex, op - 0x58));
             return info.length;
         }
-        /* NOP / XCHG rAX, reg (0x90-0x97) */
-        if (op == 0x90) { fprintf(f, "nop"); return info.length; }
+        if (op == 0x90) { sb_printf(sb, "nop"); return info.length; }
         if (op >= 0x91 && op <= 0x97) {
-            fprintf(f, "xchg %s, %s",
-                    pick_reg(w, op66, 0, info.rex, 0),
-                    pick_reg(w, op66, 0, info.rex, op - 0x90));
+            sb_printf(sb, "xchg %s, %s",
+                      pick_reg(w, op66, 0, info.rex, 0),
+                      pick_reg(w, op66, 0, info.rex, op - 0x90));
             return info.length;
         }
-        /* returns */
-        if (op == 0xC3) { fprintf(f, "ret");        return info.length; }
-        if (op == 0xCB) { fprintf(f, "retf");       return info.length; }
+        if (op == 0xC3) { sb_printf(sb, "ret");  return info.length; }
+        if (op == 0xCB) { sb_printf(sb, "retf"); return info.length; }
         if (op == 0xC2) {
             uint16_t imm = (uint16_t)buf[info.length - 2]
                          | ((uint16_t)buf[info.length - 1] << 8);
-            fprintf(f, "ret 0x%x", imm);
+            sb_printf(sb, "ret 0x%x", imm);
             return info.length;
         }
         if (op == 0xCA) {
             uint16_t imm = (uint16_t)buf[info.length - 2]
                          | ((uint16_t)buf[info.length - 1] << 8);
-            fprintf(f, "retf 0x%x", imm);
+            sb_printf(sb, "retf 0x%x", imm);
             return info.length;
         }
-        /* LEAVE */
-        if (op == 0xC9) { fprintf(f, "leave"); return info.length; }
-        /* INT */
-        if (op == 0xCC) { fprintf(f, "int3");  return info.length; }
+        if (op == 0xC9) { sb_printf(sb, "leave"); return info.length; }
+        if (op == 0xCC) { sb_printf(sb, "int3");  return info.length; }
         if (op == 0xCD) {
-            fprintf(f, "int 0x%x", buf[info.length - 1]);
+            sb_printf(sb, "int 0x%x", buf[info.length - 1]);
             return info.length;
         }
-        /* JMP/CALL rel */
-        if (op == 0xEB) { fprintf(f, "jmp rel8");     return info.length; }
-        if (op == 0xE9) { fprintf(f, "jmp rel32");    return info.length; }
-        if (op == 0xE8) { fprintf(f, "call rel32");   return info.length; }
-        /* JMP/CALL indirect */
+        if (op == 0xEB) { sb_printf(sb, "jmp rel8");   return info.length; }
+        if (op == 0xE9) { sb_printf(sb, "jmp rel32");  return info.length; }
+        if (op == 0xE8) { sb_printf(sb, "call rel32"); return info.length; }
         if (op == 0xFF) {
             uint8_t reg = (info.modrm >> 3) & 7;
             uint8_t mod = info.modrm >> 6;
             uint8_t rm  = info.modrm & 7;
             const char *mnemo = (reg == 2 || reg == 3) ? "call" : "jmp";
             if (mod == 3) {
-                fprintf(f, "%s %s", mnemo,
-                        pick_reg(1, 0, 0, info.rex, rm));
+                sb_printf(sb, "%s %s", mnemo,
+                          pick_reg(1, 0, 0, info.rex, rm));
             } else {
-                fprintf(f, "%s [mem]", mnemo);
+                sb_printf(sb, "%s [mem]", mnemo);
             }
             return info.length;
         }
-        /* MOV reg imm (B0-BF): we know size from flags */
         if (op >= 0xB0 && op <= 0xB7) {
-            fprintf(f, "mov %s, 0x%x",
-                    reg8_nohi[op - 0xB0],
-                    buf[info.length - 1]);
+            sb_printf(sb, "mov %s, 0x%x",
+                      reg8_nohi[op - 0xB0],
+                      buf[info.length - 1]);
             return info.length;
         }
         if (op >= 0xB8 && op <= 0xBF) {
-            fprintf(f, "mov %s, imm",
-                    pick_reg(w, op66, 0, info.rex, op - 0xB8));
+            sb_printf(sb, "mov %s, imm",
+                      pick_reg(w, op66, 0, info.rex, op - 0xB8));
             return info.length;
         }
-        /* MOV r, r/m (8B) and MOV r/m, r (89) — reg-reg form only */
         if ((op == 0x89 || op == 0x8B) && (info.modrm >> 6) == 3) {
             uint8_t reg = (info.modrm >> 3) & 7;
             uint8_t rm  = info.modrm & 7;
@@ -128,10 +177,9 @@ static int emit_one(FILE *f, const uint8_t *buf, size_t max)
                                            : pick_reg(w, op66, 0, info.rex, reg);
             const char *src = (op == 0x89) ? pick_reg(w, op66, 0, info.rex, reg)
                                            : pick_reg(w, op66, 0, info.rex, rm);
-            fprintf(f, "mov %s, %s", dst, src);
+            sb_printf(sb, "mov %s, %s", dst, src);
             return info.length;
         }
-        /* XOR reg, reg (0x31 / 0x33) reg-reg form */
         if ((op == 0x31 || op == 0x33) && (info.modrm >> 6) == 3) {
             uint8_t reg = (info.modrm >> 3) & 7;
             uint8_t rm  = info.modrm & 7;
@@ -139,10 +187,9 @@ static int emit_one(FILE *f, const uint8_t *buf, size_t max)
                                            : pick_reg(w, op66, 0, info.rex, reg);
             const char *src = (op == 0x31) ? pick_reg(w, op66, 0, info.rex, reg)
                                            : pick_reg(w, op66, 0, info.rex, rm);
-            fprintf(f, "xor %s, %s", dst, src);
+            sb_printf(sb, "xor %s, %s", dst, src);
             return info.length;
         }
-        /* ADD reg, reg (0x01 / 0x03) */
         if ((op == 0x01 || op == 0x03) && (info.modrm >> 6) == 3) {
             uint8_t reg = (info.modrm >> 3) & 7;
             uint8_t rm  = info.modrm & 7;
@@ -150,40 +197,118 @@ static int emit_one(FILE *f, const uint8_t *buf, size_t max)
                                            : pick_reg(w, op66, 0, info.rex, reg);
             const char *src = (op == 0x01) ? pick_reg(w, op66, 0, info.rex, reg)
                                            : pick_reg(w, op66, 0, info.rex, rm);
-            fprintf(f, "add %s, %s", dst, src);
+            sb_printf(sb, "add %s, %s", dst, src);
             return info.length;
         }
-        /* HLT */
-        if (op == 0xF4) { fprintf(f, "hlt"); return info.length; }
+        /* LEA r, [base+disp8]: 8D with mod=01, rm != 4, displacement 1 byte */
+        if (op == 0x8D && (info.modrm >> 6) == 1 && (info.modrm & 7) != 4) {
+            uint8_t reg = (info.modrm >> 3) & 7;
+            uint8_t rm  = info.modrm & 7;
+            int8_t  d8  = (int8_t)buf[info.length - 1];
+            sb_printf(sb, "lea %s, [%s%s0x%x]",
+                      pick_reg(w, op66, 0, info.rex, reg),
+                      pick_reg(1, 0, 0, info.rex, rm),
+                      d8 < 0 ? "-" : "+",
+                      d8 < 0 ? (unsigned)(-d8) : (unsigned)d8);
+            return info.length;
+        }
+        if (op == 0xF4) { sb_printf(sb, "hlt"); return info.length; }
     } else if (info.map == 2) {
-        if (op == 0x05) { fprintf(f, "syscall"); return info.length; }
-        if (op == 0x07) { fprintf(f, "sysret");  return info.length; }
+        if (op == 0x05) { sb_printf(sb, "syscall"); return info.length; }
+        if (op == 0x07) { sb_printf(sb, "sysret");  return info.length; }
+
+        /* CMOVcc reg, reg  (0F 40..4F, mod=11) */
+        if (op >= 0x40 && op <= 0x4F && (info.modrm >> 6) == 3) {
+            uint8_t reg = (info.modrm >> 3) & 7;
+            uint8_t rm  = info.modrm & 7;
+            sb_printf(sb, "%s %s, %s", cmov_cc[op - 0x40],
+                      pick_reg(w, op66, 0, info.rex, reg),
+                      pick_reg(w, op66, 0, info.rex, rm));
+            return info.length;
+        }
+
+        /* SHLD r/m, r, imm8 (0F A4) — reg-reg form only */
+        if (op == 0xA4 && (info.modrm >> 6) == 3) {
+            uint8_t reg = (info.modrm >> 3) & 7;
+            uint8_t rm  = info.modrm & 7;
+            sb_printf(sb, "shld %s, %s, 0x%x",
+                      pick_reg(w, op66, 0, info.rex, rm),
+                      pick_reg(w, op66, 0, info.rex, reg),
+                      buf[info.length - 1]);
+            return info.length;
+        }
+
+        /* SHRD r/m, r, imm8 (0F AC) */
+        if (op == 0xAC && (info.modrm >> 6) == 3) {
+            uint8_t reg = (info.modrm >> 3) & 7;
+            uint8_t rm  = info.modrm & 7;
+            sb_printf(sb, "shrd %s, %s, 0x%x",
+                      pick_reg(w, op66, 0, info.rex, rm),
+                      pick_reg(w, op66, 0, info.rex, reg),
+                      buf[info.length - 1]);
+            return info.length;
+        }
+
+        /* BT / BTS / BTR / BTC r/m, imm8 (0F BA, reg field selects op) */
+        if (op == 0xBA && (info.modrm >> 6) == 3) {
+            uint8_t reg = (info.modrm >> 3) & 7;
+            uint8_t rm  = info.modrm & 7;
+            if (reg >= 4 && reg <= 7) {
+                sb_printf(sb, "%s %s, 0x%x",
+                          bt_grp[reg - 4],
+                          pick_reg(w, op66, 0, info.rex, rm),
+                          buf[info.length - 1]);
+                return info.length;
+            }
+        }
     }
 
     /* Unknown: emit raw bytes */
-    fprintf(f, "db");
+    sb_printf(sb, "db");
     for (int i = 0; i < info.length; i++) {
-        fprintf(f, " 0x%02x%s", buf[i], i + 1 < info.length ? "," : "");
+        sb_printf(sb, " 0x%02x%s", buf[i], i + 1 < info.length ? "," : "");
     }
     return info.length;
 }
 
-void format_gadget_insns(FILE *f, const gadget_t *g)
+/* --- public API --- */
+
+static void render_insns(strbuf_t *sb, const gadget_t *g)
 {
     size_t p = 0;
-    int first = 1;
+    int    first = 1;
     while (p < g->length) {
-        if (!first) fprintf(f, " ; ");
-        int n = emit_one(f, g->bytes + p, g->length - p);
-        if (n <= 0) { fprintf(f, "?"); return; }
+        if (!first) sb_printf(sb, " ; ");
+        int n = emit_one(sb, g->bytes + p, g->length - p);
+        if (n <= 0) { sb_printf(sb, "?"); return; }
         p += (size_t)n;
         first = 0;
     }
 }
 
+void format_gadget_insns(FILE *f, const gadget_t *g)
+{
+    char scratch[1024];
+    strbuf_t sb = { scratch, sizeof scratch, 0, 0 };
+    render_insns(&sb, g);
+    fputs(scratch, f);
+}
+
 void format_gadget(FILE *f, const gadget_t *g)
 {
-    fprintf(f, "0x%016" PRIx64 ": ", g->vaddr);
-    format_gadget_insns(f, g);
+    char scratch[1024];
+    strbuf_t sb = { scratch, sizeof scratch, 0, 0 };
+    sb_printf(&sb, "0x%016" PRIx64 ": ", g->vaddr);
+    render_insns(&sb, g);
+    fputs(scratch, f);
     fputc('\n', f);
+}
+
+int format_gadget_render(const gadget_t *g, char *buf, size_t buflen)
+{
+    strbuf_t sb = { buf, buflen, 0, 0 };
+    sb_printf(&sb, "0x%016" PRIx64 ": ", g->vaddr);
+    render_insns(&sb, g);
+    if (sb.overflowed) return -1;
+    return (int)sb.len;
 }

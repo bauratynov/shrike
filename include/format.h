@@ -1,5 +1,5 @@
 /*
- * format.h — minimal x86-64 mnemonic printer for gadgets.
+ * format.h — gadget mnemonic printer.
  */
 #ifndef SHRIKE_FORMAT_H
 #define SHRIKE_FORMAT_H
@@ -14,19 +14,19 @@
 extern "C" {
 #endif
 
-/* Render a single gadget as one text line to `f`, with format:
+/* Render a gadget as one text line to `f`, with format:
  *   0x<vaddr>: <insn> ; <insn> ; ... ; <terminator>
- *
- * The printer recognises a small vocabulary of common opcodes used in
- * ROP gadgets and falls back to "db 0x<hex>, ..." for anything else.
- * That keeps the output readable for the 95% case without pretending
- * to be a full disassembler.
- */
+ * Unknown opcodes fall back to "db 0x..". */
 void format_gadget(FILE *f, const gadget_t *g);
 
-/* Same, but as a single semicolon-delimited instruction list without
- * the address prefix — used by the deduper / hash and by tests. */
+/* Render only the semicolon-separated instruction list (no address)
+ * to `f`. Used by tests. */
 void format_gadget_insns(FILE *f, const gadget_t *g);
+
+/* Render the full "0x<addr>: ..." line into a caller-provided buffer.
+ * Returns the number of characters written (excluding NUL), or -1
+ * if the output would exceed buflen. Does not write a trailing '\n'. */
+int  format_gadget_render(const gadget_t *g, char *buf, size_t buflen);
 
 #ifdef __cplusplus
 }

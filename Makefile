@@ -12,7 +12,7 @@ CFLAGS   += $(CSTD) $(WARN) $(OPT) -Iinclude -D_GNU_SOURCE
 LDFLAGS  +=
 LDLIBS   +=
 
-SRC := src/elf64.c src/xdec.c src/scan.c src/format.c src/main.c
+SRC := src/elf64.c src/xdec.c src/scan.c src/format.c src/strset.c src/main.c
 OBJ := $(SRC:.c=.o)
 BIN := shrike
 
