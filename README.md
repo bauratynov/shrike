@@ -72,8 +72,8 @@ make
 # v0.2.0: one copy of each distinct chain, stop after 50
 ./shrike --unique --limit 50 /bin/bash
 
-# Useful composition: every unique "pop rXX ; ret" chain
-./shrike --unique --filter 'pop ' --filter-ret-tail /bin/ls  # conceptual
+# Compose: every unique "pop rdi" chain, up to 20
+./shrike --unique --filter 'pop rdi' --limit 20 /bin/bash
 ```
 
 Example output:
