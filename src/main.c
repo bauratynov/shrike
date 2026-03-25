@@ -1,12 +1,12 @@
 /*
- * main.c — shrike CLI driver (v0.2.0).
+ * main.c — shrike CLI driver (v0.3.0).
  *
  *   shrike [options] <elf64>
  *
- * New in v0.2.0:
- *   --filter PATTERN   substring match against the mnemonic line
- *   --unique           de-duplicate by mnemonic text
- *   --limit N          stop after emitting N gadgets
+ * New in v0.3.0:
+ *   --json             emit one JSON object per gadget (JSON-Lines)
+ *   --regex PATTERN    POSIX regex filter over the mnemonic line
+ *                      (composes with --filter substring match)
  */
 
 #include "elf64.h"
@@ -16,18 +16,22 @@
 
 #include <errno.h>
 #include <inttypes.h>
+#include <regex.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 typedef struct {
-    size_t      total;
-    size_t      limit;         /* 0 = no limit */
-    const char *filter;        /* NULL = no filter */
-    int         unique;
-    int         stop_signal;   /* set by cb when limit reached */
-    strset_t    seen;
-    FILE       *out;           /* NULL = suppress gadget emission */
+    size_t        total;
+    size_t        limit;         /* 0 = no limit */
+    const char   *filter;        /* NULL = no substring filter */
+    regex_t       re;            /* populated when regex_set = 1 */
+    int           regex_set;
+    int           unique;
+    int           json;
+    int           stop_signal;
+    strset_t      seen;
+    FILE         *out;           /* NULL = suppress emission */
 } print_ctx_t;
 
 static void emit_cb(const elf64_segment_t *seg,
@@ -37,21 +41,28 @@ static void emit_cb(const elf64_segment_t *seg,
     print_ctx_t *pc = (print_ctx_t *)ctx;
     if (pc->stop_signal) return;
 
-    char line[1024];
-    int  n = format_gadget_render(g, line, sizeof line);
-    if (n < 0) return;  /* gadget too long to render safely */
+    /* Always render the text form first — it is the canonical key
+     * for filter / regex / dedup checks. JSON output uses the same
+     * filter decision as text output by construction. */
+    char text_line[1024];
+    int  n = format_gadget_render(g, text_line, sizeof text_line);
+    if (n < 0) return;
 
-    if (pc->filter && !strstr(line, pc->filter)) return;
+    if (pc->filter && !strstr(text_line, pc->filter)) return;
+
+    if (pc->regex_set) {
+        if (regexec(&pc->re, text_line, 0, NULL, 0) != 0) return;
+    }
 
     if (pc->unique) {
-        int rc = strset_add(&pc->seen, line);
-        if (rc <= 0) return;  /* duplicate or OOM — skip */
+        int rc = strset_add(&pc->seen, text_line);
+        if (rc <= 0) return;
     }
 
     pc->total++;
     if (pc->out) {
-        fputs(line, pc->out);
-        fputc('\n', pc->out);
+        if (pc->json) format_gadget_json(pc->out, g);
+        else          fprintf(pc->out, "%s\n", text_line);
     }
 
     if (pc->limit && pc->total >= pc->limit) pc->stop_signal = 1;
@@ -72,11 +83,15 @@ static void usage(const char *prog)
 "      --no-int           skip int / int3 terminators\n"
 "      --no-ind           skip indirect CALL/JMP (FF /2..5)\n"
 "\n"
-"Output filtering (v0.2.0):\n"
-"      --filter PATTERN   only emit gadgets whose mnemonic contains PATTERN\n"
+"Output filtering:\n"
+"      --filter PATTERN   substring match against the mnemonic line\n"
+"      --regex PATTERN    POSIX regex against the mnemonic line (v0.3.0)\n"
 "      --unique           de-duplicate identical mnemonic chains\n"
 "      --limit N          stop after N emitted gadgets\n"
 "      --quiet            only print the summary, skip gadget output\n"
+"\n"
+"Output formatting:\n"
+"      --json             emit one JSON object per gadget (v0.3.0)\n"
 "\n"
 "  -h, --help             this message\n"
 "\n"
@@ -93,8 +108,10 @@ int main(int argc, char **argv)
 
     int         quiet  = 0;
     int         unique = 0;
+    int         json   = 0;
     size_t      limit  = 0;
     const char *filter = NULL;
+    const char *regex  = NULL;
     const char *path   = NULL;
 
     for (int i = 1; i < argc; i++) {
@@ -110,8 +127,11 @@ int main(int argc, char **argv)
         } else if (!strcmp(a, "--no-ind"))     { cfg.include_ff      = 0;
         } else if (!strcmp(a, "--quiet"))      { quiet  = 1;
         } else if (!strcmp(a, "--unique"))     { unique = 1;
+        } else if (!strcmp(a, "--json"))       { json   = 1;
         } else if (!strcmp(a, "--filter") && i + 1 < argc) {
             filter = argv[++i];
+        } else if (!strcmp(a, "--regex") && i + 1 < argc) {
+            regex = argv[++i];
         } else if (!strcmp(a, "--limit") && i + 1 < argc) {
             limit = (size_t)strtoull(argv[++i], NULL, 10);
         } else if (a[0] == '-') {
@@ -141,9 +161,22 @@ int main(int argc, char **argv)
     pc.limit  = limit;
     pc.filter = filter;
     pc.unique = unique;
+    pc.json   = json;
     strset_init(&pc.seen);
 
-    if (!quiet) {
+    if (regex) {
+        int rc = regcomp(&pc.re, regex, REG_EXTENDED | REG_NOSUB);
+        if (rc != 0) {
+            char errbuf[256];
+            regerror(rc, &pc.re, errbuf, sizeof errbuf);
+            fprintf(stderr, "shrike: bad --regex: %s\n", errbuf);
+            elf64_close(&e);
+            return 2;
+        }
+        pc.regex_set = 1;
+    }
+
+    if (!quiet && !json) {
         fprintf(stdout, "# file: %s\n", path);
         fprintf(stdout, "# type: %s  entry: 0x%" PRIx64
                         "  segments: %zu\n",
@@ -153,7 +186,7 @@ int main(int argc, char **argv)
 
     for (size_t i = 0; i < e.nseg; i++) {
         const elf64_segment_t *s = &e.segs[i];
-        if (!quiet) {
+        if (!quiet && !json) {
             fprintf(stdout, "# segment[%zu]: vaddr=0x%016" PRIx64
                             "  bytes=%zu\n", i, s->vaddr, s->size);
         }
@@ -165,6 +198,7 @@ int main(int argc, char **argv)
             pc.total,
             pc.stop_signal ? " (limit reached)" : "");
 
+    if (pc.regex_set) regfree(&pc.re);
     strset_free(&pc.seen);
     elf64_close(&e);
     return 0;

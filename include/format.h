@@ -28,6 +28,15 @@ void format_gadget_insns(FILE *f, const gadget_t *g);
  * if the output would exceed buflen. Does not write a trailing '\n'. */
 int  format_gadget_render(const gadget_t *g, char *buf, size_t buflen);
 
+/* Render one JSON object per gadget, one per line (JSON-Lines):
+ *   {"addr":"0x...","insns":["mov ...","pop ...","ret"],"bytes":"5f c3"}
+ * Trailing newline included. */
+void format_gadget_json(FILE *f, const gadget_t *g);
+
+/* Render the JSON object into a caller-provided buffer; used by --unique
+ * and --filter so filtering works identically in text and JSON modes. */
+int  format_gadget_json_render(const gadget_t *g, char *buf, size_t buflen);
+
 #ifdef __cplusplus
 }
 #endif

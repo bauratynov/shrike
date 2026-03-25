@@ -312,3 +312,75 @@ int format_gadget_render(const gadget_t *g, char *buf, size_t buflen)
     if (sb.overflowed) return -1;
     return (int)sb.len;
 }
+
+/* --- JSON rendering --- */
+
+static void json_escape_str(strbuf_t *sb, const char *s)
+{
+    for (; *s; s++) {
+        unsigned char c = (unsigned char)*s;
+        switch (c) {
+        case '"':  sb_printf(sb, "\\\""); break;
+        case '\\': sb_printf(sb, "\\\\"); break;
+        case '\n': sb_printf(sb, "\\n");  break;
+        case '\r': sb_printf(sb, "\\r");  break;
+        case '\t': sb_printf(sb, "\\t");  break;
+        default:
+            if (c < 0x20) sb_printf(sb, "\\u%04x", c);
+            else          sb_printf(sb, "%c", c);
+        }
+    }
+}
+
+/* Render a single instruction as a JSON string element (including the
+ * surrounding quotes). Returns instruction length, or <= 0 on failure. */
+static int emit_one_json(strbuf_t *sb, const uint8_t *buf, size_t max)
+{
+    /* reuse emit_one() by rendering into a local strbuf, then escaping */
+    char local[128];
+    strbuf_t inner = { local, sizeof local, 0, 0 };
+    int n = emit_one(&inner, buf, max);
+    if (n <= 0) return n;
+
+    sb_printf(sb, "\"");
+    json_escape_str(sb, local);
+    sb_printf(sb, "\"");
+    return n;
+}
+
+static void render_json(strbuf_t *sb, const gadget_t *g)
+{
+    sb_printf(sb, "{\"addr\":\"0x%016" PRIx64 "\",\"insns\":[",
+              g->vaddr);
+    size_t p = 0;
+    int    first = 1;
+    while (p < g->length) {
+        if (!first) sb_printf(sb, ",");
+        int n = emit_one_json(sb, g->bytes + p, g->length - p);
+        if (n <= 0) { if (!first) sb_printf(sb, "\"?\""); break; }
+        p += (size_t)n;
+        first = 0;
+    }
+    sb_printf(sb, "],\"bytes\":\"");
+    for (size_t i = 0; i < g->length; i++) {
+        sb_printf(sb, "%s%02x", i ? " " : "", g->bytes[i]);
+    }
+    sb_printf(sb, "\",\"insn_count\":%d}", g->insn_count);
+}
+
+void format_gadget_json(FILE *f, const gadget_t *g)
+{
+    char scratch[2048];
+    strbuf_t sb = { scratch, sizeof scratch, 0, 0 };
+    render_json(&sb, g);
+    fputs(scratch, f);
+    fputc('\n', f);
+}
+
+int format_gadget_json_render(const gadget_t *g, char *buf, size_t buflen)
+{
+    strbuf_t sb = { buf, buflen, 0, 0 };
+    render_json(&sb, g);
+    if (sb.overflowed) return -1;
+    return (int)sb.len;
+}

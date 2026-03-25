@@ -3,6 +3,33 @@
 All notable changes to `shrike` are listed here. Project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] — 2026-04-18
+
+Machine-readable output and proper regex filtering — makes shrike
+a first-class participant in tool pipelines.
+
+### Added
+- **`--json`** — one JSON object per gadget (JSON-Lines), shape:
+  ```
+  {"addr":"0x...","insns":["mov rax, rdi","ret"],"bytes":"48 89 f8 c3","insn_count":2}
+  ```
+  Suitable for `jq`, ingestion into SIEM tools, or diffing across
+  builds. When `--json` is set, the human-readable `#` comment
+  header is suppressed so the output is pure JSON-Lines.
+
+- **`--regex PATTERN`** — POSIX extended regex match against the
+  mnemonic line, via `<regex.h>`. Composes with `--filter`
+  (substring) — both must match if both are supplied. Invalid
+  regex exits with code 2 and a `regerror` message.
+
+### Changed
+- `format.c` gained `format_gadget_json()` and
+  `format_gadget_json_render()`. Internal JSON escaper handles the
+  full set of characters required by RFC 8259.
+- Canonical filter key remains the *text* rendering of the gadget,
+  so `--filter`/`--regex`/`--unique` behave identically in text
+  and JSON modes.
+
 ## [0.2.0] — 2026-04-18
 
 Quality-of-life improvements for real-world use.

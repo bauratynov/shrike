@@ -16,7 +16,7 @@ decoder, and enumerates return-terminated gadget sequences.
 Named after the shrike — a songbird that impales its prey on thorns
 for later retrieval. Appropriate.
 
-> **Status:** v0.2.0 — filter, dedup, limit, expanded mnemonics.
+> **Status:** v0.3.0 — JSON output, POSIX regex filter.
 > See [CHANGELOG.md](CHANGELOG.md).
 
 ---
@@ -74,6 +74,15 @@ make
 
 # Compose: every unique "pop rdi" chain, up to 20
 ./shrike --unique --filter 'pop rdi' --limit 20 /bin/bash
+
+# v0.3.0: POSIX regex — all "pop r?? ; ret" single-pop gadgets
+./shrike --regex '^0x[0-9a-f]+: pop r[a-z]+ ; ret$' /bin/bash
+
+# v0.3.0: JSON-Lines output, pipe into jq
+./shrike --json /bin/ls | jq 'select(.insn_count == 2)'
+
+# v0.3.0: gadget audit in CI — fail if a syscall gadget exists
+./shrike --regex 'syscall' --limit 1 dist/my-service && exit 1
 ```
 
 Example output:
@@ -125,8 +134,9 @@ shrike/
 - [x] Sprint 3: gadget scanner + mnemonic printer
 - [x] Sprint 4: CI + integration tests + v0.1.0
 - [x] v0.2.0: `--filter` / `--unique` / `--limit` + more mnemonics
-- [ ] v0.3.0: regex filter, CET-aware classification, colour output
-- [ ] v0.4.0: ARM64 support (sibling length decoder)
+- [x] v0.3.0: `--json` output + `--regex` POSIX filter
+- [ ] v0.4.0: CET-aware classification (flag IBT-breaking gadgets)
+- [ ] v0.5.0: ARM64 support (sibling length decoder)
 
 ## Companion tools
 
