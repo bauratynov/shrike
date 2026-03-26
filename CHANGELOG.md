@@ -3,6 +3,44 @@
 All notable changes to `shrike` are listed here. Project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] — 2026-04-18
+
+CET‑aware classification. `shrike` now tells you which gadgets
+would be neutralised by Intel Control‑flow Enforcement Technology.
+
+### Added
+- **ENDBR64 / ENDBR32 recognition** in the mnemonic printer.
+  Instead of `db 0xf3, 0x0f, 0x1e, 0xfa` the output reads
+  `endbr64` — the prologue every IBT‑enabled function starts with.
+- **`cet_shstk_blocked(g)`** / **`cet_starts_endbr(g)`** helpers
+  (new `src/cet.c`, `include/cet.h`). Pure byte inspection.
+    * SHSTK‑blocked: terminator is RET / RETF family. The shadow
+      stack neutralises such chains.
+    * starts_endbr: first four bytes are `F3 0F 1E FA` (or `...FB`).
+      Under IBT, only ENDBR‑starting gadgets are reachable by
+      indirect CALL / JMP.
+- **`--shstk-survivable`** — keep only non‑RET‑terminated gadgets.
+- **`--endbr`** — keep only gadgets starting at an ENDBR.
+- **`--cet-tag`** — text mode inline tags: `[SHSTK-BLOCKED]` / `[ENDBR]`.
+- **JSON output** gains unconditional `shstk_blocked` and
+  `starts_endbr` boolean fields.
+- **Summary line on stderr** now prints classification counters:
+  `shrike: 1284 emitted  (SHSTK-blocked: 1241, ENDBR-start: 18)`.
+- **`tests/test_cet.c`** covers both helpers with truthy / falsy
+  inputs and edge cases (empty gadget, truncated ENDBR prefix).
+
+### Typical workflows
+```bash
+# Gadgets that could still be useful under full CET
+shrike --shstk-survivable --endbr dist/my-service
+
+# Text dump with CET annotations
+shrike --cet-tag /bin/bash | less
+
+# Count SHSTK‑survivable gadgets via jq
+shrike --json /bin/ls | jq 'select(.shstk_blocked == false)' | wc -l
+```
+
 ## [0.3.0] — 2026-04-18
 
 Machine-readable output and proper regex filtering — makes shrike
