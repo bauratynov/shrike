@@ -16,8 +16,8 @@ decoder, and enumerates return-terminated gadget sequences.
 Named after the shrike — a songbird that impales its prey on thorns
 for later retrieval. Appropriate.
 
-> **Status:** v0.3.0 — JSON output, POSIX regex filter.
-> See [CHANGELOG.md](CHANGELOG.md).
+> **Status:** v0.4.0 — CET-aware classification, ENDBR64 recognition,
+> SHSTK / IBT filtering. See [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
@@ -83,6 +83,13 @@ make
 
 # v0.3.0: gadget audit in CI — fail if a syscall gadget exists
 ./shrike --regex 'syscall' --limit 1 dist/my-service && exit 1
+
+# v0.4.0: only gadgets that survive full CET (non-RET terminator,
+# ENDBR64 at start so IBT lets indirect branches land here)
+./shrike --shstk-survivable --endbr dist/my-service
+
+# v0.4.0: annotate text output with CET classifications
+./shrike --cet-tag /bin/bash | grep -v SHSTK-BLOCKED
 ```
 
 Example output:
@@ -135,8 +142,8 @@ shrike/
 - [x] Sprint 4: CI + integration tests + v0.1.0
 - [x] v0.2.0: `--filter` / `--unique` / `--limit` + more mnemonics
 - [x] v0.3.0: `--json` output + `--regex` POSIX filter
-- [ ] v0.4.0: CET-aware classification (flag IBT-breaking gadgets)
-- [ ] v0.5.0: ARM64 support (sibling length decoder)
+- [x] v0.4.0: CET‑aware classification (SHSTK + IBT / ENDBR64)
+- [ ] v0.5.0: ARM64 support (sibling length decoder, BTI classifier)
 
 ## Companion tools
 

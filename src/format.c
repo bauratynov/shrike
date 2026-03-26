@@ -23,6 +23,7 @@
  */
 
 #include "format.h"
+#include "cet.h"
 #include "xdec.h"
 
 #include <inttypes.h>
@@ -98,6 +99,14 @@ static const char *bt_grp[4] = { "bt", "bts", "btr", "btc" };
 /* Returns length consumed; 0 or -1 on decode failure. */
 static int emit_one(strbuf_t *sb, const uint8_t *buf, size_t max)
 {
+    /* ENDBR64 / ENDBR32 — the IBT landing pads. Recognised before the
+     * generic decoder path so the output reads naturally. */
+    if (max >= 4 && buf[0] == 0xF3 && buf[1] == 0x0F &&
+        buf[2] == 0x1E && (buf[3] == 0xFA || buf[3] == 0xFB)) {
+        sb_printf(sb, buf[3] == 0xFA ? "endbr64" : "endbr32");
+        return 4;
+    }
+
     xdec_info_t info;
     if (xdec_full(buf, max, &info) < 0) return -1;
 
@@ -365,7 +374,11 @@ static void render_json(strbuf_t *sb, const gadget_t *g)
     for (size_t i = 0; i < g->length; i++) {
         sb_printf(sb, "%s%02x", i ? " " : "", g->bytes[i]);
     }
-    sb_printf(sb, "\",\"insn_count\":%d}", g->insn_count);
+    sb_printf(sb, "\",\"insn_count\":%d", g->insn_count);
+    sb_printf(sb, ",\"shstk_blocked\":%s",
+              cet_shstk_blocked(g) ? "true" : "false");
+    sb_printf(sb, ",\"starts_endbr\":%s}",
+              cet_starts_endbr(g) ? "true" : "false");
 }
 
 void format_gadget_json(FILE *f, const gadget_t *g)
