@@ -28,6 +28,7 @@ typedef struct {
     size_t         length;      /* total bytes incl. the terminator */
     int            insn_count;  /* number of instructions */
     const uint8_t *bytes;       /* convenience: segment bytes + offset */
+    uint16_t       machine;     /* EM_X86_64 or EM_AARCH64 */
 } gadget_t;
 
 typedef void (*gadget_cb_t)(const elf64_segment_t *seg,

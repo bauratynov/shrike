@@ -4,7 +4,7 @@ WARN     ?= -Wall -Wextra -Wshadow -Wpedantic -Wstrict-prototypes -Wmissing-prot
 OPT      ?= -O0 -g
 CFLAGS   += $(CSTD) $(WARN) $(OPT) -I../include
 
-TESTS := test_xdec test_scan test_cet
+TESTS := test_xdec test_scan test_cet test_arm64
 
 .PHONY: all run clean
 all: $(TESTS)
@@ -12,10 +12,13 @@ all: $(TESTS)
 test_xdec: test_xdec.c ../src/xdec.c
 	$(CC) $(CFLAGS) -o $@ $^
 
-test_scan: test_scan.c ../src/xdec.c ../src/scan.c ../src/format.c ../src/cet.c
+test_scan: test_scan.c ../src/xdec.c ../src/arm64.c ../src/scan.c ../src/format.c ../src/cet.c
 	$(CC) $(CFLAGS) -o $@ $^
 
-test_cet: test_cet.c ../src/cet.c
+test_cet: test_cet.c ../src/cet.c ../src/arm64.c
+	$(CC) $(CFLAGS) -o $@ $^
+
+test_arm64: test_arm64.c ../src/arm64.c
 	$(CC) $(CFLAGS) -o $@ $^
 
 run: $(TESTS)

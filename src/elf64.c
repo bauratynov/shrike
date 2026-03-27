@@ -36,12 +36,15 @@ static int parse(elf64_t *e)
     if (eh->e_ident[4] != ELFCLASS64 || eh->e_ident[5] != ELFDATA2LSB) {
         errno = ENOTSUP; return -1;
     }
-    if (eh->e_machine != EM_X86_64) { errno = ENOTSUP; return -1; }
+    if (eh->e_machine != EM_X86_64 && eh->e_machine != EM_AARCH64) {
+        errno = ENOTSUP; return -1;
+    }
     if (eh->e_phentsize != sizeof(Elf64_Phdr)) { errno = EINVAL; return -1; }
 
-    e->ehdr   = eh;
-    e->entry  = eh->e_entry;
-    e->is_dyn = (eh->e_type == ET_DYN);
+    e->ehdr    = eh;
+    e->entry   = eh->e_entry;
+    e->is_dyn  = (eh->e_type == ET_DYN);
+    e->machine = eh->e_machine;
 
     if (!eh->e_phnum) return 0;
 
@@ -58,10 +61,11 @@ static int parse(elf64_t *e)
         if (!in_bounds(e, p->p_offset, p->p_filesz)) continue;
 
         elf64_segment_t *s = &e->segs[e->nseg++];
-        s->bytes = e->map + p->p_offset;
-        s->size  = (size_t)p->p_filesz;
-        s->vaddr = p->p_vaddr;
-        s->flags = p->p_flags;
+        s->bytes   = e->map + p->p_offset;
+        s->size    = (size_t)p->p_filesz;
+        s->vaddr   = p->p_vaddr;
+        s->flags   = p->p_flags;
+        s->machine = e->machine;
     }
     return 0;
 }

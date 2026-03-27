@@ -24,6 +24,7 @@ extern "C" {
 #define ELFCLASS64   2
 #define ELFDATA2LSB  1
 #define EM_X86_64    62
+#define EM_AARCH64   183
 
 #define ET_EXEC 2
 #define ET_DYN  3
@@ -68,6 +69,7 @@ typedef struct {
     size_t         size;     /* file bytes */
     uint64_t       vaddr;    /* virtual address in the process image */
     uint32_t       flags;    /* PF_* */
+    uint16_t       machine;  /* EM_* of the containing ELF */
 } elf64_segment_t;
 
 #define SHRIKE_MAX_SEGMENTS 32
@@ -86,6 +88,7 @@ typedef struct {
 
     uint64_t          entry;         /* e_entry, for reporting */
     int               is_dyn;        /* ET_DYN vs ET_EXEC */
+    uint16_t          machine;       /* EM_X86_64 or EM_AARCH64 */
 } elf64_t;
 
 /* mmap + parse + fill the segs[] array with executable PT_LOAD entries.

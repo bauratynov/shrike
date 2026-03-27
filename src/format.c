@@ -25,6 +25,8 @@
 #include "format.h"
 #include "cet.h"
 #include "xdec.h"
+#include "arm64.h"
+#include "elf64.h"
 
 #include <inttypes.h>
 #include <stdarg.h>
@@ -280,15 +282,32 @@ static int emit_one(strbuf_t *sb, const uint8_t *buf, size_t max)
     return info.length;
 }
 
+/* --- AArch64 per-instruction emission --- */
+
+static int emit_one_a64(strbuf_t *sb, const uint8_t *buf, size_t max)
+{
+    if (max < 4) return -1;
+    uint32_t insn = arm64_read_insn(buf);
+    char local[64];
+    int n = arm64_render_insn(local, sizeof local, insn);
+    if (n < 0) n = snprintf(local, sizeof local, ".word 0x%08x", insn);
+    sb_printf(sb, "%s", local);
+    return 4;
+}
+
 /* --- public API --- */
 
 static void render_insns(strbuf_t *sb, const gadget_t *g)
 {
     size_t p = 0;
     int    first = 1;
+    int    is_a64 = (g->machine == EM_AARCH64);
+
     while (p < g->length) {
         if (!first) sb_printf(sb, " ; ");
-        int n = emit_one(sb, g->bytes + p, g->length - p);
+        int n = is_a64
+              ? emit_one_a64(sb, g->bytes + p, g->length - p)
+              : emit_one(sb, g->bytes + p, g->length - p);
         if (n <= 0) { sb_printf(sb, "?"); return; }
         p += (size_t)n;
         first = 0;
@@ -343,12 +362,15 @@ static void json_escape_str(strbuf_t *sb, const char *s)
 
 /* Render a single instruction as a JSON string element (including the
  * surrounding quotes). Returns instruction length, or <= 0 on failure. */
-static int emit_one_json(strbuf_t *sb, const uint8_t *buf, size_t max)
+static int emit_one_json(strbuf_t *sb, const uint8_t *buf, size_t max,
+                         int is_a64)
 {
-    /* reuse emit_one() by rendering into a local strbuf, then escaping */
+    /* reuse the architecture emitter into a local strbuf, then escape */
     char local[128];
     strbuf_t inner = { local, sizeof local, 0, 0 };
-    int n = emit_one(&inner, buf, max);
+    int n = is_a64
+          ? emit_one_a64(&inner, buf, max)
+          : emit_one(&inner, buf, max);
     if (n <= 0) return n;
 
     sb_printf(sb, "\"");
@@ -359,13 +381,16 @@ static int emit_one_json(strbuf_t *sb, const uint8_t *buf, size_t max)
 
 static void render_json(strbuf_t *sb, const gadget_t *g)
 {
-    sb_printf(sb, "{\"addr\":\"0x%016" PRIx64 "\",\"insns\":[",
-              g->vaddr);
+    int is_a64 = (g->machine == EM_AARCH64);
+
+    sb_printf(sb, "{\"addr\":\"0x%016" PRIx64 "\",\"arch\":\"%s\","
+                  "\"insns\":[",
+              g->vaddr, is_a64 ? "aarch64" : "x86_64");
     size_t p = 0;
     int    first = 1;
     while (p < g->length) {
         if (!first) sb_printf(sb, ",");
-        int n = emit_one_json(sb, g->bytes + p, g->length - p);
+        int n = emit_one_json(sb, g->bytes + p, g->length - p, is_a64);
         if (n <= 0) { if (!first) sb_printf(sb, "\"?\""); break; }
         p += (size_t)n;
         first = 0;
