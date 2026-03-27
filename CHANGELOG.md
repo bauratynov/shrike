@@ -3,6 +3,37 @@
 All notable changes to `shrike` are listed here. Project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] — 2026-04-18
+
+ARM AArch64 support. `shrike` now scans both x86‑64 and aarch64
+ELF64 binaries through a single pipeline, with the ELF `e_machine`
+driving the dispatch.
+
+### Added
+- **AArch64 scanner** (`scan_aarch64` in `src/scan.c`). Fixed
+  4‑byte instructions make length decoding trivial. Walk 4‑byte
+  aligned words, detect terminators (RET / RETAA / RETAB / BR /
+  BLR / SVC), emit gadgets of length 1..max_insn ending at each.
+- **AArch64 classifier + renderer** (`src/arm64.c`, `include/arm64.h`).
+  Minimal but honest: ret variants, br/blr, svc, nop, MOV via
+  ORR XZR, BTI (c/j/jc); unknown encodings → `.word 0xXXXXXXXX`.
+- **CET classifier is now arch‑aware** (`src/cet.c`).
+  `cet_shstk_blocked` matches aarch64 RET family too.
+  `cet_starts_endbr` also returns true for aarch64 BTI. The JSON
+  field name stays `starts_endbr` for continuity; the semantic
+  meaning is "starts with an IBT / BTI landing pad".
+- **ELF loader** accepts `EM_AARCH64` (183) alongside `EM_X86_64`.
+- **JSON output** gains an `"arch":"x86_64" | "aarch64"` field.
+- **Summary on stderr** shows the architecture tag:
+  `shrike: [aarch64] 842 emitted (SHSTK-blocked: 798, ENDBR/BTI-start: 3)`
+- **`tests/test_arm64.c`** — 20+ cases covering terminator
+  detection, BTI variants, renderer output, and little‑endian
+  instruction read.
+
+### Changed
+- `gadget_t` gained a `machine` field so format.c and cet.c
+  dispatch locally without a vtable.
+
 ## [0.4.0] — 2026-04-18
 
 CET‑aware classification. `shrike` now tells you which gadgets

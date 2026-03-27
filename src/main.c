@@ -194,9 +194,15 @@ int main(int argc, char **argv)
         if (pc.stop_signal) break;
     }
 
-    fprintf(stderr, "shrike: %zu gadgets emitted%s\n",
-            pc.total,
-            pc.stop_signal ? " (limit reached)" : "");
+    {
+        const char *arch = (e.machine == EM_AARCH64) ? "aarch64" : "x86_64";
+        fprintf(stderr,
+                "shrike: [%s] %zu emitted  "
+                "(SHSTK-blocked: %zu, ENDBR/BTI-start: %zu)%s\n",
+                arch, pc.total,
+                pc.shstk_blocked_count, pc.endbr_count,
+                pc.stop_signal ? " (limit reached)" : "");
+    }
 
     if (pc.regex_set) regfree(&pc.re);
     strset_free(&pc.seen);

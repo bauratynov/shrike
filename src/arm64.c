@@ -115,9 +115,10 @@ static int render_br_blr(char *buf, size_t buflen,
 static int render_mov_reg(char *buf, size_t buflen, uint32_t insn)
 {
     /* 64-bit ORR shifted register with Rn=XZR(31), no shift, amount=0:
-     *   sf=1, opc=01, 01010, shift=00, N=0, Rm, imm6=000000, Rn=11111, Rd
-     * mask: 0x7F E0 FC 1F -> pattern: 0xAA 00 03 E0 when Rn=31 */
-    if ((insn & 0x7FE0FC1Fu) == 0xAA0003E0u) {
+     *   sf=1 opc=01 01010 shift=00 N=0 Rm imm6=000000 Rn=11111 Rd
+     * Fixed bits: 31..21, 15..5 ; variable: Rm (20..16) and Rd (4..0).
+     * Mask 0xFFE0FFE0 preserves the fixed bits; pattern 0xAA0003E0. */
+    if ((insn & 0xFFE0FFE0u) == 0xAA0003E0u) {
         uint32_t rd = insn & 0x1F;
         uint32_t rm = (insn >> 16) & 0x1F;
         return snprintf(buf, buflen, "mov x%u, x%u", rd, rm);
