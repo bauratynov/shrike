@@ -3,6 +3,47 @@
 All notable changes to `shrike` are listed here. Project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] — 2026-04-18
+
+Exploit-development constraints: reject gadgets whose address
+contains bytes that the payload can't carry.
+
+### Added
+- **`--bad-bytes CSV`** — comma-separated list of bad bytes
+  (both `0x00` and `00` syntaxes accepted). A gadget is rejected
+  if any byte of its 8-byte little-endian address is in the set.
+  Classic exploit constraint: payloads copied through strcpy
+  can't contain null bytes; web-body injections can't contain
+  CR/LF/space.
+- **Summary on stderr** gains a line when the filter is active:
+  `shrike: 1823 gadgets rejected by --bad-bytes`
+
+### Example
+```bash
+# Find every "pop rdi ; ret" whose address has no NUL or newline
+shrike /bin/bash \
+    --filter 'pop rdi ; ret' \
+    --bad-bytes 0x00,0x0a
+```
+
+## [0.6.0] — 2026-04-18
+
+Gadget categorisation. Each emitted gadget now carries a coarse
+shape tag that you can filter on.
+
+### Added
+- **`gadget_categorize(g)`** (`src/category.c`). Eight categories:
+  `other`, `ret_only`, `pop`, `mov`, `arith`, `stack_pivot`,
+  `syscall`, `indirect`. Arch-aware across x86 and aarch64.
+- **`--category CSV`** — keep only gadgets whose category is in
+  the comma-separated list (e.g. `--category pop,mov`).
+- **`--cat-tag`** — append `[<category>]` inline in text output.
+- **JSON output** gains a `"category"` field.
+- **Summary on stderr** prints a histogram:
+  `shrike: categories: pop=128 mov=42 arith=71 stack_pivot=3 other=41`
+- **`tests/test_category.c`** — 15+ cases across both arches plus
+  the CSV mask parser.
+
 ## [0.5.0] — 2026-04-18
 
 ARM AArch64 support. `shrike` now scans both x86‑64 and aarch64
