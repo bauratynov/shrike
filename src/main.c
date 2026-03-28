@@ -11,6 +11,7 @@
 #include "format.h"
 #include "strset.h"
 #include "cet.h"
+#include "category.h"
 
 #include <errno.h>
 #include <inttypes.h>
@@ -23,6 +24,7 @@ typedef struct {
     size_t        total;
     size_t        shstk_blocked_count;
     size_t        endbr_count;
+    size_t        cat_counts[CAT_MAX];
     size_t        limit;
     const char   *filter;
     regex_t       re;
@@ -32,6 +34,8 @@ typedef struct {
     int           cet_tag;
     int           want_shstk_survivable;
     int           want_endbr;
+    uint32_t      cat_mask;      /* 0 = accept all */
+    int           cat_tag;
     int           stop_signal;
     strset_t      seen;
     FILE         *out;
@@ -46,9 +50,11 @@ static void emit_cb(const elf64_segment_t *seg,
 
     int shstk = cet_shstk_blocked(g);
     int endbr = cet_starts_endbr(g);
+    gadget_category_t cat = gadget_categorize(g);
 
     if (pc->want_shstk_survivable && shstk) return;
     if (pc->want_endbr            && !endbr) return;
+    if (pc->cat_mask && !(pc->cat_mask & (1u << cat))) return;
 
     char text_line[1024];
     int  n = format_gadget_render(g, text_line, sizeof text_line);
@@ -66,14 +72,28 @@ static void emit_cb(const elf64_segment_t *seg,
     pc->total++;
     if (shstk) pc->shstk_blocked_count++;
     if (endbr) pc->endbr_count++;
+    pc->cat_counts[cat]++;
 
     if (pc->out) {
         if (pc->json) {
-            format_gadget_json(pc->out, g);
-        } else if (pc->cet_tag) {
+            /* For JSON output, inject the category as a post-fix field.
+             * We don't modify format_gadget_json directly — instead,
+             * strip the trailing "}" and append. Keeps format.c stable. */
+            char jbuf[2048];
+            int  jn = format_gadget_json_render(g, jbuf, sizeof jbuf);
+            if (jn > 0 && jbuf[jn - 1] == '}') {
+                jbuf[jn - 1] = '\0';
+                fprintf(pc->out, "%s,\"category\":\"%s\"}\n",
+                        jbuf, gadget_category_name(cat));
+            } else {
+                format_gadget_json(pc->out, g);
+            }
+        } else if (pc->cet_tag || pc->cat_tag) {
             fputs(text_line, pc->out);
-            if (shstk) fputs(" [SHSTK-BLOCKED]", pc->out);
-            if (endbr) fputs(" [ENDBR/BTI]", pc->out);
+            if (pc->cet_tag && shstk) fputs(" [SHSTK-BLOCKED]", pc->out);
+            if (pc->cet_tag && endbr) fputs(" [ENDBR/BTI]", pc->out);
+            if (pc->cat_tag)
+                fprintf(pc->out, " [%s]", gadget_category_name(cat));
             fputc('\n', pc->out);
         } else {
             fputs(text_line, pc->out);
@@ -112,9 +132,15 @@ static void usage(const char *prog)
 "                          BTI (aarch64)\n"
 "      --cet-tag           append [SHSTK-BLOCKED]/[ENDBR/BTI] inline\n"
 "\n"
+"Category classification (v0.6.0):\n"
+"      --category CSV      keep only gadgets whose category is in CSV\n"
+"                          values: other, ret_only, pop, mov, arith,\n"
+"                                   stack_pivot, syscall, indirect\n"
+"      --cat-tag           append [<category>] inline in text mode\n"
+"\n"
 "Output formatting:\n"
 "      --json              JSON-Lines output; carries arch, shstk_blocked,\n"
-"                          starts_endbr for every gadget\n"
+"                          starts_endbr, category for every gadget\n"
 "\n"
 "  -h, --help              this message\n"
 "\n"
@@ -133,8 +159,10 @@ int main(int argc, char **argv)
     int         unique  = 0;
     int         json    = 0;
     int         cet_tag = 0;
+    int         cat_tag = 0;
     int         want_shstk = 0;
     int         want_endbr = 0;
+    uint32_t    cat_mask = 0;
     size_t      limit  = 0;
     const char *filter = NULL;
     const char *regex  = NULL;
@@ -155,12 +183,18 @@ int main(int argc, char **argv)
         } else if (!strcmp(a, "--unique"))     { unique = 1;
         } else if (!strcmp(a, "--json"))       { json   = 1;
         } else if (!strcmp(a, "--cet-tag"))    { cet_tag = 1;
+        } else if (!strcmp(a, "--cat-tag"))    { cat_tag = 1;
         } else if (!strcmp(a, "--shstk-survivable")) { want_shstk = 1;
         } else if (!strcmp(a, "--endbr"))      { want_endbr = 1;
         } else if (!strcmp(a, "--filter") && i + 1 < argc) {
             filter = argv[++i];
         } else if (!strcmp(a, "--regex") && i + 1 < argc) {
             regex = argv[++i];
+        } else if (!strcmp(a, "--category") && i + 1 < argc) {
+            if (gadget_category_parse_mask(argv[++i], &cat_mask) < 0) {
+                fprintf(stderr, "shrike: bad --category value\n");
+                return 2;
+            }
         } else if (!strcmp(a, "--limit") && i + 1 < argc) {
             limit = (size_t)strtoull(argv[++i], NULL, 10);
         } else if (a[0] == '-') {
@@ -192,6 +226,8 @@ int main(int argc, char **argv)
     pc.unique                = unique;
     pc.json                  = json;
     pc.cet_tag               = cet_tag;
+    pc.cat_tag               = cat_tag;
+    pc.cat_mask              = cat_mask;
     pc.want_shstk_survivable = want_shstk;
     pc.want_endbr            = want_endbr;
     strset_init(&pc.seen);
@@ -234,6 +270,18 @@ int main(int argc, char **argv)
             arch, pc.total,
             pc.shstk_blocked_count, pc.endbr_count,
             pc.stop_signal ? " (limit reached)" : "");
+
+    /* Category histogram on stderr when non-trivial output was produced. */
+    if (pc.total > 0) {
+        fprintf(stderr, "shrike: categories:");
+        for (int i = 0; i < CAT_MAX; i++) {
+            if (pc.cat_counts[i] > 0)
+                fprintf(stderr, " %s=%zu",
+                        gadget_category_name((gadget_category_t)i),
+                        pc.cat_counts[i]);
+        }
+        fputc('\n', stderr);
+    }
 
     if (pc.regex_set) regfree(&pc.re);
     strset_free(&pc.seen);
