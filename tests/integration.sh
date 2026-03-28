@@ -30,9 +30,9 @@ audit() {
     out=$(./shrike --quiet "$bin" 2>&1 | tail -1)
 
     # Summary line: "shrike: [arch] N emitted (SHSTK-blocked: X, ENDBR/BTI-start: Y)".
-    # Pull out the first integer field — robust to arch-tag formatting.
+    # Column 3 is the emitted-count.
     local n
-    n=$(echo "$out" | grep -oE '[0-9]+' | head -1)
+    n=$(echo "$out" | awk '{print $3}')
     if [[ -z "$n" ]] || ! [[ "$n" =~ ^[0-9]+$ ]]; then
         say_fail "$label: malformed summary: $out"
         return
