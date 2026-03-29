@@ -25,6 +25,7 @@ typedef struct {
     size_t        shstk_blocked_count;
     size_t        endbr_count;
     size_t        cat_counts[CAT_MAX];
+    size_t        bad_bytes_filtered;
     size_t        limit;
     const char   *filter;
     regex_t       re;
@@ -36,10 +37,34 @@ typedef struct {
     int           want_endbr;
     uint32_t      cat_mask;      /* 0 = accept all */
     int           cat_tag;
+    int           bad_byte_active;
+    uint8_t       bad_byte_set[256];
     int           stop_signal;
     strset_t      seen;
     FILE         *out;
 } print_ctx_t;
+
+/* Parse "0x00,0x0a,20" into the bad-byte set. */
+static int parse_bad_bytes(const char *csv, uint8_t set[256])
+{
+    memset(set, 0, 256);
+    const char *p = csv;
+    while (*p) {
+        const char *q = p;
+        while (*q && *q != ',') q++;
+        char buf[8];
+        size_t len = (size_t)(q - p);
+        if (len == 0 || len >= sizeof buf) return -1;
+        memcpy(buf, p, len);
+        buf[len] = '\0';
+        char *end = NULL;
+        unsigned long v = strtoul(buf, &end, 0);
+        if (!end || *end || v > 255) return -1;
+        set[v] = 1;
+        p = *q ? q + 1 : q;
+    }
+    return 0;
+}
 
 static void emit_cb(const elf64_segment_t *seg,
                     const gadget_t *g, void *ctx)
@@ -55,6 +80,17 @@ static void emit_cb(const elf64_segment_t *seg,
     if (pc->want_shstk_survivable && shstk) return;
     if (pc->want_endbr            && !endbr) return;
     if (pc->cat_mask && !(pc->cat_mask & (1u << cat))) return;
+
+    if (pc->bad_byte_active) {
+        uint64_t v = g->vaddr;
+        for (int i = 0; i < 8; i++) {
+            if (pc->bad_byte_set[v & 0xFF]) {
+                pc->bad_bytes_filtered++;
+                return;
+            }
+            v >>= 8;
+        }
+    }
 
     char text_line[1024];
     int  n = format_gadget_render(g, text_line, sizeof text_line);
@@ -138,6 +174,10 @@ static void usage(const char *prog)
 "                                   stack_pivot, syscall, indirect\n"
 "      --cat-tag           append [<category>] inline in text mode\n"
 "\n"
+"Exploit-dev constraints (v0.7.0):\n"
+"      --bad-bytes CSV     reject gadgets whose vaddr contains any\n"
+"                          of these bytes (e.g. '0x00,0x0a,0x20')\n"
+"\n"
 "Output formatting:\n"
 "      --json              JSON-Lines output; carries arch, shstk_blocked,\n"
 "                          starts_endbr, category for every gadget\n"
@@ -163,10 +203,14 @@ int main(int argc, char **argv)
     int         want_shstk = 0;
     int         want_endbr = 0;
     uint32_t    cat_mask = 0;
+    int         bad_active = 0;
+    uint8_t     bad_set[256];
     size_t      limit  = 0;
     const char *filter = NULL;
     const char *regex  = NULL;
     const char *path   = NULL;
+
+    memset(bad_set, 0, sizeof bad_set);
 
     for (int i = 1; i < argc; i++) {
         const char *a = argv[i];
@@ -195,6 +239,12 @@ int main(int argc, char **argv)
                 fprintf(stderr, "shrike: bad --category value\n");
                 return 2;
             }
+        } else if (!strcmp(a, "--bad-bytes") && i + 1 < argc) {
+            if (parse_bad_bytes(argv[++i], bad_set) < 0) {
+                fprintf(stderr, "shrike: bad --bad-bytes value\n");
+                return 2;
+            }
+            bad_active = 1;
         } else if (!strcmp(a, "--limit") && i + 1 < argc) {
             limit = (size_t)strtoull(argv[++i], NULL, 10);
         } else if (a[0] == '-') {
@@ -230,6 +280,8 @@ int main(int argc, char **argv)
     pc.cat_mask              = cat_mask;
     pc.want_shstk_survivable = want_shstk;
     pc.want_endbr            = want_endbr;
+    pc.bad_byte_active       = bad_active;
+    if (bad_active) memcpy(pc.bad_byte_set, bad_set, sizeof bad_set);
     strset_init(&pc.seen);
 
     if (regex) {
@@ -270,6 +322,11 @@ int main(int argc, char **argv)
             arch, pc.total,
             pc.shstk_blocked_count, pc.endbr_count,
             pc.stop_signal ? " (limit reached)" : "");
+
+    if (pc.bad_byte_active && pc.bad_bytes_filtered > 0) {
+        fprintf(stderr, "shrike: %zu rejected by --bad-bytes\n",
+                pc.bad_bytes_filtered);
+    }
 
     /* Category histogram on stderr when non-trivial output was produced. */
     if (pc.total > 0) {
