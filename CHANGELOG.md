@@ -3,6 +3,33 @@
 All notable changes to `shrike` are listed here. Project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] — 2026-04-18
+
+Multi-binary audit. Pass any number of ELF paths; the scanner
+walks each in turn and --unique dedup applies across all of them,
+so gadget chains shared between main binary and its dependencies
+collapse to one line.
+
+### Added
+- **Multiple inputs**: `shrike bin libc.so.6 liblzma.so.5 …`. Up
+  to 64 inputs per invocation.
+- **`--src-tag`** — append `[<path>]` to each text line identifying
+  which binary the gadget came from.
+- **JSON output** always carries a `"src"` field.
+- **Summary line** reports the number of inputs processed:
+  `shrike: 3 inputs  5123 emitted  (SHSTK-blocked: 2910, ENDBR/BTI-start: 14)`
+- On load failure for any input the tool continues with the rest
+  and exits 1 at the end.
+
+### Example
+```bash
+# Unique gadgets across the main binary and its shared libraries
+shrike --unique --src-tag \
+    dist/my-service \
+    /lib/x86_64-linux-gnu/libc.so.6 \
+    /lib/x86_64-linux-gnu/libpthread.so.0
+```
+
 ## [0.7.0] — 2026-04-18
 
 Exploit-development constraints: reject gadgets whose address

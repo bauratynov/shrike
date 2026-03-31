@@ -35,13 +35,16 @@ typedef struct {
     int           cet_tag;
     int           want_shstk_survivable;
     int           want_endbr;
-    uint32_t      cat_mask;      /* 0 = accept all */
+    uint32_t      cat_mask;
     int           cat_tag;
     int           bad_byte_active;
     uint8_t       bad_byte_set[256];
     int           stop_signal;
     strset_t      seen;
     FILE         *out;
+    /* v0.8.0 — multi-binary: current source path, optional tag */
+    const char   *src;
+    int           src_tag;
 } print_ctx_t;
 
 /* Parse "0x00,0x0a,20" into the bad-byte set. */
@@ -112,22 +115,25 @@ static void emit_cb(const elf64_segment_t *seg,
 
     if (pc->out) {
         if (pc->json) {
-            /* For JSON output, inject the category as a post-fix field.
-             * We don't modify format_gadget_json directly — instead,
-             * strip the trailing "}" and append. Keeps format.c stable. */
+            /* Inject category + src as post-fix fields by stripping
+             * the trailing '}' from the renderer output. */
             char jbuf[2048];
             int  jn = format_gadget_json_render(g, jbuf, sizeof jbuf);
             if (jn > 0 && jbuf[jn - 1] == '}') {
                 jbuf[jn - 1] = '\0';
-                fprintf(pc->out, "%s,\"category\":\"%s\"}\n",
+                fprintf(pc->out, "%s,\"category\":\"%s\"",
                         jbuf, gadget_category_name(cat));
+                if (pc->src)
+                    fprintf(pc->out, ",\"src\":\"%s\"", pc->src);
+                fputs("}\n", pc->out);
             } else {
                 format_gadget_json(pc->out, g);
             }
-        } else if (pc->cet_tag || pc->cat_tag) {
+        } else if (pc->cet_tag || pc->cat_tag || pc->src_tag) {
             fputs(text_line, pc->out);
-            if (pc->cet_tag && shstk) fputs(" [SHSTK-BLOCKED]", pc->out);
-            if (pc->cet_tag && endbr) fputs(" [ENDBR/BTI]", pc->out);
+            if (pc->src_tag && pc->src) fprintf(pc->out, " [%s]", pc->src);
+            if (pc->cet_tag && shstk)   fputs(" [SHSTK-BLOCKED]", pc->out);
+            if (pc->cet_tag && endbr)   fputs(" [ENDBR/BTI]", pc->out);
             if (pc->cat_tag)
                 fprintf(pc->out, " [%s]", gadget_category_name(cat));
             fputc('\n', pc->out);
@@ -178,6 +184,13 @@ static void usage(const char *prog)
 "      --bad-bytes CSV     reject gadgets whose vaddr contains any\n"
 "                          of these bytes (e.g. '0x00,0x0a,0x20')\n"
 "\n"
+"Multi-binary audit (v0.8.0):\n"
+"      pass any number of ELF paths; --unique dedup applies\n"
+"      across all of them, so gadget chains shared between libs\n"
+"      collapse to one line.\n"
+"      --src-tag           append [<file>] to each text line\n"
+"      JSON output always carries a 'src' field.\n"
+"\n"
 "Output formatting:\n"
 "      --json              JSON-Lines output; carries arch, shstk_blocked,\n"
 "                          starts_endbr, category for every gadget\n"
@@ -205,10 +218,14 @@ int main(int argc, char **argv)
     uint32_t    cat_mask = 0;
     int         bad_active = 0;
     uint8_t     bad_set[256];
+    int         src_tag = 0;
     size_t      limit  = 0;
     const char *filter = NULL;
     const char *regex  = NULL;
-    const char *path   = NULL;
+
+    /* v0.8.0: accept multiple paths. Collected after flags. */
+    const char *paths[64];
+    size_t      n_paths = 0;
 
     memset(bad_set, 0, sizeof bad_set);
 
@@ -245,6 +262,7 @@ int main(int argc, char **argv)
                 return 2;
             }
             bad_active = 1;
+        } else if (!strcmp(a, "--src-tag"))    { src_tag = 1;
         } else if (!strcmp(a, "--limit") && i + 1 < argc) {
             limit = (size_t)strtoull(argv[++i], NULL, 10);
         } else if (a[0] == '-') {
@@ -252,21 +270,15 @@ int main(int argc, char **argv)
             usage(argv[0]);
             return 2;
         } else {
-            if (path) {
-                fprintf(stderr, "shrike: only one input supported\n");
+            if (n_paths >= sizeof(paths) / sizeof(paths[0])) {
+                fprintf(stderr, "shrike: too many inputs (max 64)\n");
                 return 2;
             }
-            path = a;
+            paths[n_paths++] = a;
         }
     }
 
-    if (!path) { usage(argv[0]); return 2; }
-
-    elf64_t e;
-    if (elf64_load(path, &e) < 0) {
-        fprintf(stderr, "shrike: %s: %s\n", path, strerror(errno));
-        return 1;
-    }
+    if (n_paths == 0) { usage(argv[0]); return 2; }
 
     print_ctx_t pc;
     memset(&pc, 0, sizeof pc);
@@ -277,6 +289,7 @@ int main(int argc, char **argv)
     pc.json                  = json;
     pc.cet_tag               = cet_tag;
     pc.cat_tag               = cat_tag;
+    pc.src_tag               = src_tag;
     pc.cat_mask              = cat_mask;
     pc.want_shstk_survivable = want_shstk;
     pc.want_endbr            = want_endbr;
@@ -290,36 +303,49 @@ int main(int argc, char **argv)
             char errbuf[256];
             regerror(rc, &pc.re, errbuf, sizeof errbuf);
             fprintf(stderr, "shrike: bad --regex: %s\n", errbuf);
-            elf64_close(&e);
             return 2;
         }
         pc.regex_set = 1;
     }
 
-    const char *arch = (e.machine == EM_AARCH64) ? "aarch64" : "x86_64";
+    int had_error = 0;
 
-    if (!quiet && !json) {
-        fprintf(stdout, "# file: %s\n", path);
-        fprintf(stdout, "# type: %s  arch: %s  entry: 0x%" PRIx64
-                        "  segments: %zu\n",
-                e.is_dyn ? "ET_DYN" : "ET_EXEC",
-                arch, e.entry, e.nseg);
-    }
-
-    for (size_t i = 0; i < e.nseg; i++) {
-        const elf64_segment_t *s = &e.segs[i];
-        if (!quiet && !json) {
-            fprintf(stdout, "# segment[%zu]: vaddr=0x%016" PRIx64
-                            "  bytes=%zu\n", i, s->vaddr, s->size);
+    for (size_t pi = 0; pi < n_paths && !pc.stop_signal; pi++) {
+        const char *path = paths[pi];
+        elf64_t e;
+        if (elf64_load(path, &e) < 0) {
+            fprintf(stderr, "shrike: %s: %s\n", path, strerror(errno));
+            had_error = 1;
+            continue;
         }
-        scan_segment(s, &cfg, emit_cb, &pc);
-        if (pc.stop_signal) break;
+        pc.src = path;
+        const char *arch = (e.machine == EM_AARCH64) ? "aarch64" : "x86_64";
+
+        if (!quiet && !json) {
+            fprintf(stdout, "# file: %s\n", path);
+            fprintf(stdout, "# type: %s  arch: %s  entry: 0x%" PRIx64
+                            "  segments: %zu\n",
+                    e.is_dyn ? "ET_DYN" : "ET_EXEC",
+                    arch, e.entry, e.nseg);
+        }
+
+        for (size_t i = 0; i < e.nseg; i++) {
+            const elf64_segment_t *s = &e.segs[i];
+            if (!quiet && !json) {
+                fprintf(stdout, "# segment[%zu]: vaddr=0x%016" PRIx64
+                                "  bytes=%zu\n", i, s->vaddr, s->size);
+            }
+            scan_segment(s, &cfg, emit_cb, &pc);
+            if (pc.stop_signal) break;
+        }
+
+        elf64_close(&e);
     }
 
     fprintf(stderr,
-            "shrike: [%s] %zu emitted  "
+            "shrike: %zu inputs  %zu emitted  "
             "(SHSTK-blocked: %zu, ENDBR/BTI-start: %zu)%s\n",
-            arch, pc.total,
+            n_paths, pc.total,
             pc.shstk_blocked_count, pc.endbr_count,
             pc.stop_signal ? " (limit reached)" : "");
 
@@ -342,6 +368,5 @@ int main(int argc, char **argv)
 
     if (pc.regex_set) regfree(&pc.re);
     strset_free(&pc.seen);
-    elf64_close(&e);
-    return 0;
+    return had_error ? 1 : 0;
 }
