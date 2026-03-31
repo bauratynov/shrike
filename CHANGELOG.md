@@ -3,6 +3,30 @@
 All notable changes to `shrike` are listed here. Project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] — 2026-04-18
+
+Binary-to-binary gadget diff. Supply two ELFs with the `--diff`
+flag; `shrike` emits gadgets present in the new binary but not in
+the old (`+ mnemo`) and gadgets present in the old but not in the
+new (`- mnemo`).
+
+Matching is by rendered mnemonic text with the address prefix
+stripped, so the comparison is ASLR-safe: identical gadget shapes
+at different addresses count as "common".
+
+### Added
+- **`--diff`** flag; requires exactly two input paths.
+- `strset_contains()` / `strset_foreach()` — new primitives that
+  enable the set-difference algorithm.
+- Diff emission: one `+` or `-` prefix per differing mnemonic.
+- Summary line: `shrike --diff: +218  -74  common=3012`.
+
+### Example
+```bash
+# What gadgets did the latest libc release add?
+shrike --diff /old/libc.so.6 /new/libc.so.6 | head
+```
+
 ## [0.8.0] — 2026-04-18
 
 Multi-binary audit. Pass any number of ELF paths; the scanner

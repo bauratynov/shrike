@@ -80,3 +80,23 @@ int strset_add(strset_t *s, const char *key)
     s->used++;
     return 1;
 }
+
+int strset_contains(const strset_t *s, const char *key)
+{
+    if (!s->slots || s->cap == 0) return 0;
+    size_t mask = s->cap - 1;
+    size_t i    = (size_t)fnv1a(key) & mask;
+    while (s->slots[i]) {
+        if (strcmp(s->slots[i], key) == 0) return 1;
+        i = (i + 1) & mask;
+    }
+    return 0;
+}
+
+void strset_foreach(const strset_t *s, strset_iter_fn fn, void *ctx)
+{
+    if (!s->slots) return;
+    for (size_t i = 0; i < s->cap; i++) {
+        if (s->slots[i]) fn(s->slots[i], ctx);
+    }
+}

@@ -27,6 +27,15 @@ void strset_free(strset_t *s);
 /* Returns 1 if newly inserted, 0 if already present, -1 on OOM. */
 int  strset_add(strset_t *s, const char *key);
 
+/* Returns 1 if key is present, 0 otherwise. */
+int  strset_contains(const strset_t *s, const char *key);
+
+/* Call fn(key, ctx) for each present key. Iteration order is
+ * hash-table order — unstable across insertions but deterministic
+ * for a given set. */
+typedef void (*strset_iter_fn)(const char *key, void *ctx);
+void strset_foreach(const strset_t *s, strset_iter_fn fn, void *ctx);
+
 #ifdef __cplusplus
 }
 #endif

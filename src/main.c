@@ -191,6 +191,15 @@ static void usage(const char *prog)
 "      --src-tag           append [<file>] to each text line\n"
 "      JSON output always carries a 'src' field.\n"
 "\n"
+"Binary diff (v0.9.0):\n"
+"      --diff              requires exactly two inputs:\n"
+"                          'shrike --diff old.so new.so'.\n"
+"                          Emits '+ mnemo' for gadgets present\n"
+"                          in NEW but not in OLD, and '- mnemo'\n"
+"                          for gadgets present in OLD but not\n"
+"                          in NEW. Matching is by mnemonic text\n"
+"                          (address-independent, ASLR-safe).\n"
+"\n"
 "Output formatting:\n"
 "      --json              JSON-Lines output; carries arch, shstk_blocked,\n"
 "                          starts_endbr, category for every gadget\n"
@@ -219,6 +228,7 @@ int main(int argc, char **argv)
     int         bad_active = 0;
     uint8_t     bad_set[256];
     int         src_tag = 0;
+    int         diff_mode = 0;       /* v0.9.0 */
     size_t      limit  = 0;
     const char *filter = NULL;
     const char *regex  = NULL;
@@ -263,6 +273,7 @@ int main(int argc, char **argv)
             }
             bad_active = 1;
         } else if (!strcmp(a, "--src-tag"))    { src_tag = 1;
+        } else if (!strcmp(a, "--diff"))       { diff_mode = 1;
         } else if (!strcmp(a, "--limit") && i + 1 < argc) {
             limit = (size_t)strtoull(argv[++i], NULL, 10);
         } else if (a[0] == '-') {
@@ -279,6 +290,81 @@ int main(int argc, char **argv)
     }
 
     if (n_paths == 0) { usage(argv[0]); return 2; }
+
+    if (diff_mode && n_paths != 2) {
+        fprintf(stderr, "shrike: --diff requires exactly two inputs\n");
+        return 2;
+    }
+
+    /* ======== diff mode (v0.9.0) ========
+     * Scan each input, collect mnemonic lines into a strset, then
+     * print the symmetric difference with +/- prefixes. Matching is
+     * by rendered mnemonic line so it is ASLR-safe.              */
+    if (diff_mode) {
+        strset_t set_old, set_new;
+        strset_init(&set_old);
+        strset_init(&set_new);
+
+        /* Config the collector sees via file-scope statics below. */
+        extern void diff_collect_set_target(strset_t *s);
+        extern void diff_collect_cb(const elf64_segment_t *seg,
+                                    const gadget_t *g, void *ctx);
+
+        for (size_t pi = 0; pi < 2; pi++) {
+            elf64_t e;
+            if (elf64_load(paths[pi], &e) < 0) {
+                fprintf(stderr, "shrike: %s: %s\n",
+                        paths[pi], strerror(errno));
+                strset_free(&set_old);
+                strset_free(&set_new);
+                return 1;
+            }
+            diff_collect_set_target(pi == 0 ? &set_old : &set_new);
+            for (size_t i = 0; i < e.nseg; i++) {
+                scan_segment(&e.segs[i], &cfg, diff_collect_cb, NULL);
+            }
+            elf64_close(&e);
+        }
+
+        /* emit + for entries in NEW not in OLD, - for OLD not in NEW */
+        struct diff_emit_env {
+            const strset_t *other;
+            FILE           *out;
+            char            prefix;
+            size_t          count;
+        };
+
+        extern void diff_emit_cb(const char *key, void *ctx);
+
+        /* NB: the diff_emit_env_t type is defined at file scope below;
+         * referencing it here via a matching local struct is portable
+         * because it has identical layout. */
+        struct {
+            const strset_t *other;
+            FILE           *out;
+            char            prefix;
+            size_t          count;
+        } added   = { &set_old, stdout, '+', 0 };
+        struct {
+            const strset_t *other;
+            FILE           *out;
+            char            prefix;
+            size_t          count;
+        } removed = { &set_new, stdout, '-', 0 };
+
+        strset_foreach(&set_new, diff_emit_cb, &added);
+        strset_foreach(&set_old, diff_emit_cb, &removed);
+
+        size_t common = set_old.used > removed.count
+                      ? set_old.used - removed.count : 0;
+
+        fprintf(stderr, "shrike --diff: +%zu  -%zu  common=%zu\n",
+                added.count, removed.count, common);
+
+        strset_free(&set_old);
+        strset_free(&set_new);
+        return 0;
+    }
 
     print_ctx_t pc;
     memset(&pc, 0, sizeof pc);
@@ -369,4 +455,50 @@ int main(int argc, char **argv)
     if (pc.regex_set) regfree(&pc.re);
     strset_free(&pc.seen);
     return had_error ? 1 : 0;
+}
+
+/* -------------------------------------------------------------------------
+ * diff-mode helpers (v0.9.0).
+ *
+ * The collector writes mnemonic strings into a file-scope "current
+ * target" strset. Between scans, main() calls diff_collect_set_target()
+ * to switch which set receives new entries. The emitter iterates a set
+ * and prints entries absent from a reference set.
+ * ------------------------------------------------------------------------- */
+
+static strset_t *g_diff_target;
+
+void diff_collect_set_target(strset_t *s)
+{
+    g_diff_target = s;
+}
+
+void diff_collect_cb(const elf64_segment_t *seg,
+                     const gadget_t *g, void *ctx)
+{
+    (void)seg; (void)ctx;
+    if (!g_diff_target) return;
+    char line[1024];
+    int  n = format_gadget_render(g, line, sizeof line);
+    if (n < 0) return;
+    /* Strip the address prefix so matches are ASLR-safe: keep
+     * everything after the ": ". */
+    const char *colon = strstr(line, ": ");
+    const char *key   = colon ? colon + 2 : line;
+    strset_add(g_diff_target, key);
+}
+
+struct diff_emit_env_t {
+    const strset_t *other;
+    FILE           *out;
+    char            prefix;
+    size_t          count;
+};
+
+void diff_emit_cb(const char *key, void *ctx)
+{
+    struct diff_emit_env_t *env = (struct diff_emit_env_t *)ctx;
+    if (strset_contains(env->other, key)) return;  /* in both → not a diff */
+    fprintf(env->out, "%c %s\n", env->prefix, key);
+    env->count++;
 }
