@@ -12,6 +12,7 @@
 #include "strset.h"
 #include "cet.h"
 #include "category.h"
+#include "regidx.h"
 
 #include <errno.h>
 #include <inttypes.h>
@@ -45,6 +46,8 @@ typedef struct {
     /* v0.8.0 — multi-binary: current source path, optional tag */
     const char   *src;
     int           src_tag;
+    /* v0.10.0 — register-control indexer (updated per gadget) */
+    regidx_t     *ri;
 } print_ctx_t;
 
 /* Parse "0x00,0x0a,20" into the bad-byte set. */
@@ -112,6 +115,7 @@ static void emit_cb(const elf64_segment_t *seg,
     if (shstk) pc->shstk_blocked_count++;
     if (endbr) pc->endbr_count++;
     pc->cat_counts[cat]++;
+    if (pc->ri) regidx_observe(pc->ri, g);
 
     if (pc->out) {
         if (pc->json) {
@@ -191,6 +195,15 @@ static void usage(const char *prog)
 "      --src-tag           append [<file>] to each text line\n"
 "      JSON output always carries a 'src' field.\n"
 "\n"
+"Register-control index (v0.10.0):\n"
+"      --reg-index         after the scan, print a table of\n"
+"                          'which register can I pop into, at what\n"
+"                          addresses?' Indexes multi-pop chains too\n"
+"                          (pop rbp ; pop r12 ; ret credits both).\n"
+"      --reg-index-python  emit the index as a pwntools-compatible\n"
+"                          Python dict literal instead.\n"
+"      --reg-index-json    emit the index as JSON.\n"
+"\n"
 "Binary diff (v0.9.0):\n"
 "      --diff              requires exactly two inputs:\n"
 "                          'shrike --diff old.so new.so'.\n"
@@ -228,7 +241,8 @@ int main(int argc, char **argv)
     int         bad_active = 0;
     uint8_t     bad_set[256];
     int         src_tag = 0;
-    int         diff_mode = 0;       /* v0.9.0 */
+    int         diff_mode = 0;        /* v0.9.0 */
+    int         reg_index = 0;        /* v0.10.0: 1=text, 2=python, 3=json */
     size_t      limit  = 0;
     const char *filter = NULL;
     const char *regex  = NULL;
@@ -274,6 +288,9 @@ int main(int argc, char **argv)
             bad_active = 1;
         } else if (!strcmp(a, "--src-tag"))    { src_tag = 1;
         } else if (!strcmp(a, "--diff"))       { diff_mode = 1;
+        } else if (!strcmp(a, "--reg-index"))        { reg_index = 1;
+        } else if (!strcmp(a, "--reg-index-python")) { reg_index = 2;
+        } else if (!strcmp(a, "--reg-index-json"))   { reg_index = 3;
         } else if (!strcmp(a, "--limit") && i + 1 < argc) {
             limit = (size_t)strtoull(argv[++i], NULL, 10);
         } else if (a[0] == '-') {
@@ -383,6 +400,17 @@ int main(int argc, char **argv)
     if (bad_active) memcpy(pc.bad_byte_set, bad_set, sizeof bad_set);
     strset_init(&pc.seen);
 
+    /* v0.10.0: enable the register indexer when any --reg-index-* flag
+     * is set. Suppress the per-gadget text/JSON emission so the index
+     * is the only thing on stdout (easier for consumers to pipe). */
+    regidx_t ri;
+    if (reg_index) {
+        /* Arch comes from the first successfully-loaded binary — set
+         * below, before we start scanning. */
+        pc.ri  = &ri;
+        pc.out = NULL;
+    }
+
     if (regex) {
         int rc = regcomp(&pc.re, regex, REG_EXTENDED | REG_NOSUB);
         if (rc != 0) {
@@ -395,6 +423,7 @@ int main(int argc, char **argv)
     }
 
     int had_error = 0;
+    int ri_initialised = 0;
 
     for (size_t pi = 0; pi < n_paths && !pc.stop_signal; pi++) {
         const char *path = paths[pi];
@@ -406,6 +435,11 @@ int main(int argc, char **argv)
         }
         pc.src = path;
         const char *arch = (e.machine == EM_AARCH64) ? "aarch64" : "x86_64";
+
+        if (reg_index && !ri_initialised) {
+            regidx_init(&ri, e.machine);
+            ri_initialised = 1;
+        }
 
         if (!quiet && !json) {
             fprintf(stdout, "# file: %s\n", path);
@@ -450,6 +484,15 @@ int main(int argc, char **argv)
                         pc.cat_counts[i]);
         }
         fputc('\n', stderr);
+    }
+
+    /* v0.10.0 register-index emission — after all scanning is done. */
+    if (reg_index && ri_initialised) {
+        switch (reg_index) {
+        case 2: regidx_print_python(&ri, stdout); break;
+        case 3: regidx_print_json  (&ri, stdout); break;
+        default: regidx_print       (&ri, stdout); break;
+        }
     }
 
     if (pc.regex_set) regfree(&pc.re);
