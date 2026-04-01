@@ -27,12 +27,14 @@ audit() {
     fi
 
     local out
-    out=$(./shrike --quiet "$bin" 2>&1 | tail -1)
+    # Summary line contains "emitted"; category histogram comes after.
+    out=$(./shrike --quiet "$bin" 2>&1 | grep 'emitted' | head -1)
 
-    # Summary line: "shrike: [arch] N emitted (SHSTK-blocked: X, ENDBR/BTI-start: Y)".
-    # Column 3 is the emitted-count.
+    # Format: "shrike: [arch] N emitted (...)" or
+    #         "shrike: N inputs M emitted (...)" in multi-binary mode.
+    # Take the integer immediately before the word "emitted".
     local n
-    n=$(echo "$out" | awk '{print $3}')
+    n=$(echo "$out" | awk '{ for (i=1;i<=NF;i++) if ($i=="emitted") print $(i-1) }' | head -1)
     if [[ -z "$n" ]] || ! [[ "$n" =~ ^[0-9]+$ ]]; then
         say_fail "$label: malformed summary: $out"
         return
