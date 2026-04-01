@@ -16,8 +16,11 @@ decoder, and enumerates return-terminated gadget sequences.
 Named after the shrike — a songbird that impales its prey on thorns
 for later retrieval. Appropriate.
 
-> **Status:** v0.4.0 — CET-aware classification, ENDBR64 recognition,
-> SHSTK / IBT filtering. See [CHANGELOG.md](CHANGELOG.md).
+> **Status:** v0.9.0 — dual‑arch (x86_64 + aarch64), filters
+> (substring / regex / unique / limit / category / bad‑bytes),
+> CET (x86) + BTI (aarch64) classification, JSON output,
+> multi‑binary audit, ASLR‑safe gadget diff between binaries.
+> See [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
@@ -143,7 +146,12 @@ shrike/
 - [x] v0.2.0: `--filter` / `--unique` / `--limit` + more mnemonics
 - [x] v0.3.0: `--json` output + `--regex` POSIX filter
 - [x] v0.4.0: CET‑aware classification (SHSTK + IBT / ENDBR64)
-- [ ] v0.5.0: ARM64 support (sibling length decoder, BTI classifier)
+- [x] v0.5.0: AArch64 support + BTI landing‑pad classifier
+- [x] v0.6.0: 8‑way gadget categorisation + `--category` / `--cat-tag`
+- [x] v0.7.0: `--bad-bytes` — reject gadgets whose address has bad bytes
+- [x] v0.8.0: multi‑binary audit — scan N inputs, dedup across the set
+- [x] v0.9.0: `--diff OLD NEW` — ASLR‑safe set difference of gadgets
+- [ ] v0.10.0: gadget chain composer — given a goal, find a chain
 
 ## Companion tools
 
