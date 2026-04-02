@@ -40,6 +40,16 @@ const char *regidx_reg_name(uint16_t machine, int r)
     return x86_regs[r];
 }
 
+int regidx_reg_lookup(uint16_t machine, const char *name)
+{
+    int n = (machine == EM_AARCH64) ? 32 : 16;
+    for (int i = 0; i < n; i++) {
+        const char *nm = regidx_reg_name(machine, i);
+        if (nm && strcmp(nm, name) == 0) return i;
+    }
+    return -1;
+}
+
 void regidx_init(regidx_t *ri, uint16_t machine)
 {
     memset(ri, 0, sizeof(*ri));

@@ -4,7 +4,7 @@ WARN     ?= -Wall -Wextra -Wshadow -Wpedantic -Wstrict-prototypes -Wmissing-prot
 OPT      ?= -O0 -g
 CFLAGS   += $(CSTD) $(WARN) $(OPT) -I../include
 
-TESTS := test_xdec test_scan test_cet test_arm64 test_category test_regidx
+TESTS := test_xdec test_scan test_cet test_arm64 test_category test_regidx test_recipe
 
 .PHONY: all run clean
 all: $(TESTS)
@@ -25,6 +25,9 @@ test_category: test_category.c ../src/category.c ../src/arm64.c
 	$(CC) $(CFLAGS) -o $@ $^
 
 test_regidx: test_regidx.c ../src/regidx.c ../src/arm64.c
+	$(CC) $(CFLAGS) -o $@ $^
+
+test_recipe: test_recipe.c ../src/recipe.c ../src/regidx.c ../src/arm64.c
 	$(CC) $(CFLAGS) -o $@ $^
 
 run: $(TESTS)

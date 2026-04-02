@@ -47,6 +47,9 @@ void regidx_observe(regidx_t *ri, const gadget_t *g);
 /* Name the arch register at index r (0..31). Returns NULL for out-of-range. */
 const char *regidx_reg_name(uint16_t machine, int r);
 
+/* Inverse lookup: return the register index for a name, or -1. */
+int         regidx_reg_lookup(uint16_t machine, const char *name);
+
 /* Print a human-readable table of reg -> addresses. */
 void regidx_print(const regidx_t *ri, FILE *f);
 
