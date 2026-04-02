@@ -194,7 +194,7 @@ void regidx_print(const regidx_t *ri, FILE *f)
             fprintf(f, " 0x%" PRIx64, ri->addrs[r][i]);
         }
         if (ri->counts[r] > cap) fprintf(f, " ... (+%u)",
-                                         ri->counts[r] - cap);
+                                         (unsigned)(ri->counts[r] - cap));
         fputc('\n', f);
     }
 
@@ -205,7 +205,8 @@ void regidx_print(const regidx_t *ri, FILE *f)
             fprintf(f, " 0x%" PRIx64, ri->syscall_addrs[i]);
         }
         if (ri->syscall_count > cap)
-            fprintf(f, " ... (+%u)", ri->syscall_count - cap);
+            fprintf(f, " ... (+%u)",
+                    (unsigned)(ri->syscall_count - cap));
         fputc('\n', f);
     }
 }
