@@ -14,6 +14,11 @@
 #include "category.h"
 #include "regidx.h"
 #include "recipe.h"
+#include "sarif.h"
+
+/* v0.13.0: file-scope pointer so emit_cb can reach the SARIF
+ * emitter without changing the gadget_cb signature. */
+sarif_emitter_t *shrike_sarif_emitter_current;
 
 #include <errno.h>
 #include <inttypes.h>
@@ -117,6 +122,12 @@ static void emit_cb(const elf64_segment_t *seg,
     if (endbr) pc->endbr_count++;
     pc->cat_counts[cat]++;
     if (pc->ri) regidx_observe(pc->ri, g);
+
+    /* v0.13.0: SARIF routing through a file-scope pointer. */
+    extern sarif_emitter_t *shrike_sarif_emitter_current;
+    if (shrike_sarif_emitter_current) {
+        sarif_emit(shrike_sarif_emitter_current, g, cat, pc->src);
+    }
 
     if (pc->out) {
         if (pc->json) {
@@ -255,9 +266,11 @@ int main(int argc, char **argv)
     uint8_t     bad_set[256];
     int         src_tag = 0;
     int         diff_mode = 0;        /* v0.9.0 */
-    int         reg_index = 0;        /* v0.10.0: 1=text, 2=python, 3=json */
-    const char *recipe_src = NULL;    /* v0.11.0: chain DSL string */
-    int         recipe_fmt = 0;       /* v0.12.0: 0=text, 1=pwntools */
+    int         reg_index = 0;        /* v0.10.0 */
+    const char *recipe_src = NULL;    /* v0.11.0 */
+    int         recipe_fmt = 0;       /* v0.12.0 */
+    int         sarif_mode = 0;       /* v0.13.0 */
+    size_t      sarif_cap  = 1000;    /* v0.13.0 */
     size_t      limit  = 0;
     const char *filter = NULL;
     const char *regex  = NULL;
@@ -308,6 +321,9 @@ int main(int argc, char **argv)
         } else if (!strcmp(a, "--reg-index-json"))   { reg_index = 3;
         } else if (!strcmp(a, "--recipe") && i + 1 < argc) {
             recipe_src = argv[++i];
+        } else if (!strcmp(a, "--sarif"))                    { sarif_mode = 1;
+        } else if (!strcmp(a, "--sarif-cap") && i + 1 < argc) {
+            sarif_cap = (size_t)strtoull(argv[++i], NULL, 10);
         } else if ((!strcmp(a, "--format") || !strcmp(a, "-p"))
                    && i + 1 < argc) {
             const char *v = argv[++i];
@@ -436,6 +452,19 @@ int main(int argc, char **argv)
         pc.out = NULL;
     }
 
+    /* v0.13.0 — SARIF mode suppresses per-gadget text and streams a
+     * single SARIF document via a file-scope emitter pointer. */
+    extern sarif_emitter_t *shrike_sarif_emitter_current;
+    sarif_emitter_t *sarif = NULL;
+    if (sarif_mode) {
+        sarif = sarif_new(stdout, sarif_cap);
+        if (!sarif) { fprintf(stderr, "shrike: sarif alloc\n"); return 1; }
+        sarif_begin(sarif);
+        shrike_sarif_emitter_current = sarif;
+        pc.out  = NULL;
+        pc.json = 0;
+    }
+
     if (regex) {
         int rc = regcomp(&pc.re, regex, REG_EXTENDED | REG_NOSUB);
         if (rc != 0) {
@@ -520,6 +549,13 @@ int main(int argc, char **argv)
         case 3: regidx_print_json  (&ri, stdout); break;
         default: regidx_print       (&ri, stdout); break;
         }
+    }
+
+    /* v0.13.0 close SARIF. */
+    if (sarif) {
+        shrike_sarif_emitter_current = NULL;
+        sarif_end(sarif);
+        sarif_free(sarif);
     }
 
     /* v0.11.0 + v0.12.0 recipe resolution. */
