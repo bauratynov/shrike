@@ -81,7 +81,8 @@ static void test_resolve_finds_gadgets(void)
     recipe_parse("rdi=*; rax=59; syscall", &r, EM_X86_64);
 
     FILE *f = tmpfile();
-    int missing = recipe_resolve(&r, &idx, EM_X86_64, f);
+    int missing = recipe_resolve(&r, &idx, EM_X86_64, NULL,
+                                 RECIPE_FMT_TEXT, f);
     CHECK(missing == 0, "all 3 resolved");
 
     /* Read the output */
@@ -108,9 +109,46 @@ static void test_resolve_missing(void)
     recipe_parse("rdi=*; rsi=*; syscall", &r, EM_X86_64);
 
     FILE *f = tmpfile();
-    int missing = recipe_resolve(&r, &idx, EM_X86_64, f);
+    int missing = recipe_resolve(&r, &idx, EM_X86_64, NULL,
+                                 RECIPE_FMT_TEXT, f);
     CHECK(missing == 2, "rsi + syscall reported missing");
     fclose(f);
+}
+
+static void test_pwntools_format(void)
+{
+    printf("\npwntools format emits ROP.raw() + cyclic placeholders\n");
+    regidx_t idx;
+    regidx_init(&idx, EM_X86_64);
+    idx.addrs[7][0] = 0x401000; idx.counts[7] = 1;
+    idx.addrs[0][0] = 0x401100; idx.counts[0] = 1;
+    idx.syscall_addrs[0] = 0x401200; idx.syscall_count = 1;
+
+    recipe_t r;
+    recipe_parse("rdi=*; rax=59; syscall", &r, EM_X86_64);
+
+    FILE *f = tmpfile();
+    int missing = recipe_resolve(&r, &idx, EM_X86_64, "/bin/ls",
+                                 RECIPE_FMT_PWNTOOLS, f);
+    CHECK(missing == 0, "all resolved");
+
+    rewind(f);
+    char buf[4096]; size_t n = fread(buf, 1, sizeof buf - 1, f);
+    buf[n] = '\0';
+    fclose(f);
+
+    CHECK(strstr(buf, "from pwn import *") != NULL,
+          "emits pwn import");
+    CHECK(strstr(buf, "context.arch = 'amd64'") != NULL,
+          "context.arch set");
+    CHECK(strstr(buf, "ELF('/bin/ls')") != NULL, "ELF path emitted");
+    CHECK(strstr(buf, "rop = ROP(elf)") != NULL, "ROP object created");
+    CHECK(strstr(buf, "rop.raw(0x401000)") != NULL,
+          "rdi gadget via rop.raw");
+    CHECK(strstr(buf, "cyclic(8, n=8)") != NULL,
+          "cyclic placeholder for *");
+    CHECK(strstr(buf, "rop.raw(0x3b)") != NULL,
+          "literal rax=59 emitted");
 }
 
 int main(void)
@@ -120,6 +158,7 @@ int main(void)
     test_parse_malformed();
     test_resolve_finds_gadgets();
     test_resolve_missing();
+    test_pwntools_format();
     printf("\n%d passed, %d failed\n", passes, fails);
     return fails ? 1 : 0;
 }

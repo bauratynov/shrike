@@ -212,6 +212,10 @@ static void usage(const char *prog)
 "                          'syscall' inserts a syscall terminator\n"
 "                          Example:\n"
 "                              --recipe 'rdi=*; rsi=*; rax=59; syscall'\n"
+"      --format FMT        recipe output format: text (default) |\n"
+"                          pwntools (self-sufficient Python skeleton\n"
+"                          using pwn.ROP().raw() + cyclic placeholders)\n"
+"      -p                  short alias for --format pwntools\n"
 "\n"
 "Binary diff (v0.9.0):\n"
 "      --diff              requires exactly two inputs:\n"
@@ -253,6 +257,7 @@ int main(int argc, char **argv)
     int         diff_mode = 0;        /* v0.9.0 */
     int         reg_index = 0;        /* v0.10.0: 1=text, 2=python, 3=json */
     const char *recipe_src = NULL;    /* v0.11.0: chain DSL string */
+    int         recipe_fmt = 0;       /* v0.12.0: 0=text, 1=pwntools */
     size_t      limit  = 0;
     const char *filter = NULL;
     const char *regex  = NULL;
@@ -303,6 +308,15 @@ int main(int argc, char **argv)
         } else if (!strcmp(a, "--reg-index-json"))   { reg_index = 3;
         } else if (!strcmp(a, "--recipe") && i + 1 < argc) {
             recipe_src = argv[++i];
+        } else if ((!strcmp(a, "--format") || !strcmp(a, "-p"))
+                   && i + 1 < argc) {
+            const char *v = argv[++i];
+            if      (!strcmp(v, "pwntools") || !strcmp(v, "py")) recipe_fmt = 1;
+            else if (!strcmp(v, "text"))                         recipe_fmt = 0;
+            else {
+                fprintf(stderr, "shrike: bad --format (expected text|pwntools)\n");
+                return 2;
+            }
         } else if (!strcmp(a, "--limit") && i + 1 < argc) {
             limit = (size_t)strtoull(argv[++i], NULL, 10);
         } else if (a[0] == '-') {
@@ -508,14 +522,18 @@ int main(int argc, char **argv)
         }
     }
 
-    /* v0.11.0 recipe resolution. */
+    /* v0.11.0 + v0.12.0 recipe resolution. */
     if (recipe_src && ri_initialised) {
         recipe_t rec;
         if (recipe_parse(recipe_src, &rec, first_arch) < 0) {
             fprintf(stderr, "shrike: bad --recipe syntax\n");
             had_error = 1;
         } else {
-            int missing = recipe_resolve(&rec, &ri, first_arch, stdout);
+            recipe_format_t fmt = recipe_fmt == 1
+                                ? RECIPE_FMT_PWNTOOLS
+                                : RECIPE_FMT_TEXT;
+            int missing = recipe_resolve(&rec, &ri, first_arch,
+                                         paths[0], fmt, stdout);
             if (missing > 0) had_error = 1;
         }
     }

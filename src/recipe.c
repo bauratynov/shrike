@@ -99,8 +99,8 @@ int recipe_parse(const char *src, recipe_t *out, uint16_t machine)
 
 /* ------------------------------------------------------------------ */
 
-int recipe_resolve(const recipe_t *r, const regidx_t *idx,
-                   uint16_t machine, FILE *f)
+static int resolve_text(const recipe_t *r, const regidx_t *idx,
+                        uint16_t machine, FILE *f)
 {
     int missing = 0;
     const char *arch = (machine == EM_AARCH64) ? "aarch64" : "x86_64";
@@ -150,4 +150,90 @@ int recipe_resolve(const recipe_t *r, const regidx_t *idx,
                 missing);
     }
     return missing;
+}
+
+static int resolve_pwntools(const recipe_t *r, const regidx_t *idx,
+                            uint16_t machine, const char *elf_path,
+                            FILE *f)
+{
+    int missing = 0;
+    const char *ctx_arch =
+        (machine == EM_AARCH64) ? "aarch64" : "amd64";
+
+    fprintf(f,
+        "#!/usr/bin/env python3\n"
+        "# Synthesised by shrike --format pwntools\n"
+        "# Auto-generated exploit skeleton — audit before running.\n"
+        "from pwn import *\n\n"
+        "context.arch = '%s'\n", ctx_arch);
+    if (elf_path) {
+        fprintf(f, "context.binary = elf = ELF('%s')\n", elf_path);
+    }
+    fprintf(f, "rop = ROP(elf)\n\n");
+
+    int slot_idx = 0;
+    for (int i = 0; i < r->n; i++) {
+        const recipe_stmt_t *s = &r->stmts[i];
+
+        if (s->op == RSTMT_SET_REG) {
+            const char *rn = regidx_reg_name(machine, s->reg);
+            if (!rn) { missing++; continue; }
+            if (s->reg >= REGIDX_MAX_REGS || idx->counts[s->reg] == 0) {
+                fprintf(f, "# MISSING: no pop-gadget for %s\n", rn);
+                missing++;
+                continue;
+            }
+            uint64_t g = idx->addrs[s->reg][0];
+            fprintf(f, "rop.raw(0x%" PRIx64 ")           # pop %s ; ret\n",
+                    g, rn);
+            if (s->is_literal) {
+                fprintf(f, "rop.raw(0x%" PRIx64 ")           # %s = 0x%" PRIx64 "\n",
+                        s->value, rn, s->value);
+            } else {
+                /* cyclic De Bruijn slot — helps identify the exact
+                 * offset that ends up in the register at crash time. */
+                fprintf(f, "rop.raw(cyclic(8, n=8))  # TODO <%s> slot %d\n",
+                        rn, slot_idx++);
+            }
+        } else if (s->op == RSTMT_SYSCALL) {
+            if (idx->syscall_count == 0) {
+                fprintf(f, "# MISSING: no syscall gadget\n");
+                missing++;
+            } else {
+                fprintf(f, "rop.raw(0x%" PRIx64 ")           # %s\n",
+                        idx->syscall_addrs[0],
+                        machine == EM_AARCH64 ? "svc" : "syscall");
+            }
+        } else if (s->op == RSTMT_RET) {
+            fprintf(f, "# TODO: caller-provided return address\n");
+        }
+    }
+
+    fprintf(f,
+        "\n"
+        "payload = rop.chain()\n"
+        "# offset = ???   # TODO: distance from buffer start to saved RIP\n"
+        "# io = process(elf.path)\n"
+        "# io.sendline(flat({offset: payload}))\n"
+        "# io.interactive()\n");
+
+    if (missing) {
+        fprintf(f,
+            "# %d gadgets missing — scan additional binaries (e.g. libc)\n",
+            missing);
+    }
+    return missing;
+}
+
+int recipe_resolve(const recipe_t *r,
+                   const regidx_t *idx,
+                   uint16_t        machine,
+                   const char     *elf_path,
+                   recipe_format_t fmt,
+                   FILE           *f)
+{
+    if (fmt == RECIPE_FMT_PWNTOOLS) {
+        return resolve_pwntools(r, idx, machine, elf_path, f);
+    }
+    return resolve_text(r, idx, machine, f);
 }

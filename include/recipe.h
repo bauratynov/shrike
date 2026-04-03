@@ -54,11 +54,22 @@ typedef struct {
 /* Parse the DSL. Returns 0 on success, -1 on malformed input. */
 int recipe_parse(const char *src, recipe_t *out, uint16_t machine);
 
-/* Resolve the recipe against a register-control index and print a
- * text chain. Returns the number of unresolved statements (0 means
- * every register / terminator was matched). */
-int recipe_resolve(const recipe_t *r, const regidx_t *idx,
-                   uint16_t machine, FILE *out);
+typedef enum {
+    RECIPE_FMT_TEXT     = 0,   /* default: address + comment per line   */
+    RECIPE_FMT_PWNTOOLS = 1    /* self-sufficient Python exploit skel.  */
+} recipe_format_t;
+
+/* Resolve the recipe against a register-control index and emit the
+ * chain in the requested format. `elf_path` is referenced in
+ * pwntools output (`ELF('./path')`); it may be NULL for text mode.
+ * Returns the number of unresolved statements (0 means every
+ * register / terminator was matched). */
+int recipe_resolve(const recipe_t *r,
+                   const regidx_t *idx,
+                   uint16_t        machine,
+                   const char     *elf_path,
+                   recipe_format_t fmt,
+                   FILE           *out);
 
 #ifdef __cplusplus
 }
