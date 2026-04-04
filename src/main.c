@@ -60,6 +60,11 @@ typedef struct {
     regidx_t     *ri;
     /* v0.15.0 — canonical dedup */
     int           canonical;
+    /* v0.17.0 — ROPecker-style density tracking */
+    int           density_on;
+    size_t       *buckets;       /* gadgets per 4KB of seg vaddr     */
+    size_t        bucket_cap;
+    uint64_t      bucket_base;   /* vaddr of bucket[0] */
 } print_ctx_t;
 
 /* Parse "0x00,0x0a,20" into the bad-byte set. */
@@ -134,6 +139,10 @@ static void emit_cb(const elf64_segment_t *seg,
     if (endbr) pc->endbr_count++;
     pc->cat_counts[cat]++;
     if (pc->ri) regidx_observe(pc->ri, g);
+    if (pc->density_on && pc->buckets) {
+        uint64_t off = (g->vaddr - pc->bucket_base) / 4096;
+        if (off < pc->bucket_cap) pc->buckets[off]++;
+    }
 
     /* v0.13.0 SARIF routing. */
     extern sarif_emitter_t *shrike_sarif_emitter_current;
@@ -299,6 +308,7 @@ int main(int argc, char **argv)
     int         pivots_mode = 0;      /* v0.14.0: 1=text, 2=json */
     int         canonical   = 0;      /* v0.15.0 */
     int         wx_check    = 0;      /* v0.16.0: W^X segment audit */
+    int         density_mode = 0;     /* v0.17.0: ROPecker histogram */
     size_t      limit  = 0;
     const char *filter = NULL;
     const char *regex  = NULL;
@@ -357,6 +367,7 @@ int main(int argc, char **argv)
         } else if (!strcmp(a, "--canonical"))                { canonical = 1;
             unique = 1;
         } else if (!strcmp(a, "--wx-check"))                 { wx_check = 1;
+        } else if (!strcmp(a, "--density"))                  { density_mode = 1;
         } else if ((!strcmp(a, "--format") || !strcmp(a, "-p"))
                    && i + 1 < argc) {
             const char *v = argv[++i];
@@ -465,6 +476,7 @@ int main(int argc, char **argv)
     pc.filter                = filter;
     pc.unique                = unique;
     pc.canonical             = canonical;
+    pc.density_on            = density_mode;
     pc.json                  = json;
     pc.cet_tag               = cet_tag;
     pc.cat_tag               = cat_tag;
@@ -555,8 +567,6 @@ int main(int argc, char **argv)
                 fprintf(stdout, "# segment[%zu]: vaddr=0x%016" PRIx64
                                 "  bytes=%zu\n", i, s->vaddr, s->size);
             }
-            /* v0.16.0: report executable+writable segments — a classic
-             * W^X-violation smell (legit JITs trip this too). */
             if (wx_check && (s->flags & PF_W) && (s->flags & PF_X)) {
                 fprintf(stderr,
                     "WX-VIOLATION  %s  seg[%zu] vaddr=0x%" PRIx64
@@ -564,7 +574,27 @@ int main(int argc, char **argv)
                     path, i, s->vaddr, s->size);
                 had_error = 1;
             }
+            /* v0.17.0: per-segment density bucket */
+            if (density_mode) {
+                pc.bucket_cap  = (s->size + 4095) / 4096 + 1;
+                pc.buckets     = calloc(pc.bucket_cap, sizeof(size_t));
+                pc.bucket_base = s->vaddr;
+            }
             scan_segment(s, &cfg, emit_cb, &pc);
+            if (density_mode && pc.buckets) {
+                fprintf(stdout, "# density seg[%zu] — gadgets per 4KB:\n", i);
+                for (size_t b = 0; b < pc.bucket_cap; b++) {
+                    if (pc.buckets[b] == 0) continue;
+                    uint64_t va = pc.bucket_base + (uint64_t)b * 4096;
+                    int bar = (int)(pc.buckets[b] / 5);
+                    if (bar > 40) bar = 40;
+                    fprintf(stdout, "#   0x%016" PRIx64 " ", va);
+                    for (int k = 0; k < bar; k++) fputc('#', stdout);
+                    fprintf(stdout, " %zu\n", pc.buckets[b]);
+                }
+                free(pc.buckets);
+                pc.buckets = NULL;
+            }
             if (pc.stop_signal) break;
         }
 
