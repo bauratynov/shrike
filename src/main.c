@@ -309,6 +309,7 @@ int main(int argc, char **argv)
     int         canonical   = 0;      /* v0.15.0 */
     int         wx_check    = 0;      /* v0.16.0: W^X segment audit */
     int         density_mode = 0;     /* v0.17.0: ROPecker histogram */
+    int         jop_mode     = 0;     /* v0.18.0: JOP / COP shortcut  */
     size_t      limit  = 0;
     const char *filter = NULL;
     const char *regex  = NULL;
@@ -368,6 +369,12 @@ int main(int argc, char **argv)
             unique = 1;
         } else if (!strcmp(a, "--wx-check"))                 { wx_check = 1;
         } else if (!strcmp(a, "--density"))                  { density_mode = 1;
+        } else if (!strcmp(a, "--jop")) {
+            /* shortcut: --category indirect --unique --cat-tag */
+            jop_mode = 1;
+            cat_mask = 1u << CAT_INDIRECT;
+            unique   = 1;
+            cat_tag  = 1;
         } else if ((!strcmp(a, "--format") || !strcmp(a, "-p"))
                    && i + 1 < argc) {
             const char *v = argv[++i];
