@@ -297,6 +297,7 @@ int main(int argc, char **argv)
     int         sarif_mode = 0;       /* v0.13.0 */
     size_t      sarif_cap  = 1000;    /* v0.13.0 */
     int         pivots_mode = 0;      /* v0.14.0: 1=text, 2=json */
+    int         canonical   = 0;      /* v0.15.0 */
     size_t      limit  = 0;
     const char *filter = NULL;
     const char *regex  = NULL;
