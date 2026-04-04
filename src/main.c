@@ -298,6 +298,7 @@ int main(int argc, char **argv)
     size_t      sarif_cap  = 1000;    /* v0.13.0 */
     int         pivots_mode = 0;      /* v0.14.0: 1=text, 2=json */
     int         canonical   = 0;      /* v0.15.0 */
+    int         wx_check    = 0;      /* v0.16.0: W^X segment audit */
     size_t      limit  = 0;
     const char *filter = NULL;
     const char *regex  = NULL;
@@ -355,6 +356,7 @@ int main(int argc, char **argv)
         } else if (!strcmp(a, "--pivots-json"))              { pivots_mode = 2;
         } else if (!strcmp(a, "--canonical"))                { canonical = 1;
             unique = 1;
+        } else if (!strcmp(a, "--wx-check"))                 { wx_check = 1;
         } else if ((!strcmp(a, "--format") || !strcmp(a, "-p"))
                    && i + 1 < argc) {
             const char *v = argv[++i];
@@ -552,6 +554,15 @@ int main(int argc, char **argv)
             if (!quiet && !json) {
                 fprintf(stdout, "# segment[%zu]: vaddr=0x%016" PRIx64
                                 "  bytes=%zu\n", i, s->vaddr, s->size);
+            }
+            /* v0.16.0: report executable+writable segments — a classic
+             * W^X-violation smell (legit JITs trip this too). */
+            if (wx_check && (s->flags & PF_W) && (s->flags & PF_X)) {
+                fprintf(stderr,
+                    "WX-VIOLATION  %s  seg[%zu] vaddr=0x%" PRIx64
+                    "  size=%zu  flags=rwx\n",
+                    path, i, s->vaddr, s->size);
+                had_error = 1;
             }
             scan_segment(s, &cfg, emit_cb, &pc);
             if (pc.stop_signal) break;
