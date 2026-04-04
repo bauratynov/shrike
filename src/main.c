@@ -15,10 +15,14 @@
 #include "regidx.h"
 #include "recipe.h"
 #include "sarif.h"
+#include "pivots.h"
 
 /* v0.13.0: file-scope pointer so emit_cb can reach the SARIF
  * emitter without changing the gadget_cb signature. */
 sarif_emitter_t *shrike_sarif_emitter_current;
+
+/* v0.14.0: same pattern for the pivot atlas. */
+pivot_atlas_t   *shrike_pivot_atlas_current;
 
 #include <errno.h>
 #include <inttypes.h>
@@ -123,10 +127,16 @@ static void emit_cb(const elf64_segment_t *seg,
     pc->cat_counts[cat]++;
     if (pc->ri) regidx_observe(pc->ri, g);
 
-    /* v0.13.0: SARIF routing through a file-scope pointer. */
+    /* v0.13.0 SARIF routing. */
     extern sarif_emitter_t *shrike_sarif_emitter_current;
     if (shrike_sarif_emitter_current) {
         sarif_emit(shrike_sarif_emitter_current, g, cat, pc->src);
+    }
+
+    /* v0.14.0 pivot atlas routing. */
+    extern pivot_atlas_t *shrike_pivot_atlas_current;
+    if (shrike_pivot_atlas_current) {
+        pivot_atlas_observe(shrike_pivot_atlas_current, g);
     }
 
     if (pc->out) {
@@ -271,6 +281,7 @@ int main(int argc, char **argv)
     int         recipe_fmt = 0;       /* v0.12.0 */
     int         sarif_mode = 0;       /* v0.13.0 */
     size_t      sarif_cap  = 1000;    /* v0.13.0 */
+    int         pivots_mode = 0;      /* v0.14.0: 1=text, 2=json */
     size_t      limit  = 0;
     const char *filter = NULL;
     const char *regex  = NULL;
@@ -324,6 +335,8 @@ int main(int argc, char **argv)
         } else if (!strcmp(a, "--sarif"))                    { sarif_mode = 1;
         } else if (!strcmp(a, "--sarif-cap") && i + 1 < argc) {
             sarif_cap = (size_t)strtoull(argv[++i], NULL, 10);
+        } else if (!strcmp(a, "--pivots"))                   { pivots_mode = 1;
+        } else if (!strcmp(a, "--pivots-json"))              { pivots_mode = 2;
         } else if ((!strcmp(a, "--format") || !strcmp(a, "-p"))
                    && i + 1 < argc) {
             const char *v = argv[++i];
@@ -452,15 +465,24 @@ int main(int argc, char **argv)
         pc.out = NULL;
     }
 
-    /* v0.13.0 — SARIF mode suppresses per-gadget text and streams a
-     * single SARIF document via a file-scope emitter pointer. */
-    extern sarif_emitter_t *shrike_sarif_emitter_current;
+    /* v0.13.0 SARIF mode */
     sarif_emitter_t *sarif = NULL;
     if (sarif_mode) {
         sarif = sarif_new(stdout, sarif_cap);
         if (!sarif) { fprintf(stderr, "shrike: sarif alloc\n"); return 1; }
         sarif_begin(sarif);
         shrike_sarif_emitter_current = sarif;
+        pc.out  = NULL;
+        pc.json = 0;
+    }
+
+    /* v0.14.0 pivots mode */
+    pivot_atlas_t *pivots = NULL;
+    uint16_t pivots_machine = 0;
+    if (pivots_mode) {
+        pivots = pivot_atlas_new();
+        if (!pivots) { fprintf(stderr, "shrike: pivots alloc\n"); return 1; }
+        shrike_pivot_atlas_current = pivots;
         pc.out  = NULL;
         pc.json = 0;
     }
@@ -496,6 +518,7 @@ int main(int argc, char **argv)
             first_arch = e.machine;
             ri_initialised = 1;
         }
+        if (pivots_mode && pivots_machine == 0) pivots_machine = e.machine;
 
         if (!quiet && !json) {
             fprintf(stdout, "# file: %s\n", path);
@@ -556,6 +579,14 @@ int main(int argc, char **argv)
         shrike_sarif_emitter_current = NULL;
         sarif_end(sarif);
         sarif_free(sarif);
+    }
+
+    /* v0.14.0 emit pivot atlas. */
+    if (pivots) {
+        shrike_pivot_atlas_current = NULL;
+        if (pivots_mode == 2) pivot_atlas_print_json(pivots, pivots_machine, stdout);
+        else                  pivot_atlas_print     (pivots, pivots_machine, stdout);
+        pivot_atlas_free(pivots);
     }
 
     /* v0.11.0 + v0.12.0 recipe resolution. */
