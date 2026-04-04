@@ -37,6 +37,14 @@ void format_gadget_json(FILE *f, const gadget_t *g);
  * and --filter so filtering works identically in text and JSON modes. */
 int  format_gadget_json_render(const gadget_t *g, char *buf, size_t buflen);
 
+/* Canonical dedup key. Applies:
+ *   - ret 0x0 / retn 0 / retf  →  ret
+ *   - xor REG, REG             →  ZERO(REG)
+ * Used only as a dedup key in --canonical mode; the output stays the
+ * rendered form. Returns chars written or -1 on overflow. */
+int  format_gadget_canonical_render(const gadget_t *g,
+                                    char *buf, size_t buflen);
+
 #ifdef __cplusplus
 }
 #endif

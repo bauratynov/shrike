@@ -341,6 +341,50 @@ int format_gadget_render(const gadget_t *g, char *buf, size_t buflen)
     return (int)sb.len;
 }
 
+/* --- canonical dedup key (v0.15.0) --- */
+
+/* In-place substring rewrite: replace every non-overlapping `pat`
+ * with `rep` inside nul-terminated `s`. `rep` length must be ≤ `pat`
+ * length so we can do it in place. */
+static void replace_inplace(char *s, const char *pat, const char *rep)
+{
+    size_t plen = strlen(pat), rlen = strlen(rep);
+    if (rlen > plen) return;
+    char *p;
+    while ((p = strstr(s, pat)) != NULL) {
+        memcpy(p, rep, rlen);
+        memmove(p + rlen, p + plen, strlen(p + plen) + 1);
+    }
+}
+
+int format_gadget_canonical_render(const gadget_t *g,
+                                   char *buf, size_t buflen)
+{
+    int n = format_gadget_render(g, buf, buflen);
+    if (n < 0) return -1;
+
+    /* R1: retn/retf variants — only collapse the `0x0` imm form,
+     * because `retn 0x8` is semantically different from `ret`. */
+    replace_inplace(buf, "ret 0x0", "ret");
+    replace_inplace(buf, "retf",    "ret");
+
+    /* R2: zero-idiom collapse for common registers. */
+    static const char *regs[] = {
+        "rax","rcx","rdx","rbx","rbp","rsi","rdi",
+        "r8","r9","r10","r11","r12","r13","r14","r15",
+        "eax","ecx","edx","ebx","ebp","esi","edi",
+        NULL
+    };
+    for (int i = 0; regs[i]; i++) {
+        char pat[40], rep[24];
+        snprintf(pat, sizeof pat, "xor %s, %s", regs[i], regs[i]);
+        snprintf(rep, sizeof rep, "ZERO(%s)",  regs[i]);
+        replace_inplace(buf, pat, rep);
+    }
+
+    return (int)strlen(buf);
+}
+
 /* --- JSON rendering --- */
 
 static void json_escape_str(strbuf_t *sb, const char *s)
