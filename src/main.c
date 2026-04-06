@@ -311,6 +311,7 @@ int main(int argc, char **argv)
     int         density_mode = 0;     /* v0.17.0: ROPecker histogram */
     int         jop_mode     = 0;     /* v0.18.0: JOP / COP shortcut  */
     int         cet_posture  = 0;     /* v0.19.0: IBT/SHSTK/BTI flags */
+    int         intersect    = 0;     /* v0.20.0: count shared gadgets */
     size_t      limit  = 0;
     const char *filter = NULL;
     const char *regex  = NULL;
@@ -376,6 +377,7 @@ int main(int argc, char **argv)
             unique   = 1;
             cat_tag  = 1;
         } else if (!strcmp(a, "--cet-posture"))              { cet_posture = 1;
+        } else if (!strcmp(a, "--intersect"))                { intersect = 1;
         } else if ((!strcmp(a, "--format") || !strcmp(a, "-p"))
                    && i + 1 < argc) {
             const char *v = argv[++i];
@@ -677,6 +679,13 @@ int main(int argc, char **argv)
     if (pc.bad_byte_active && pc.bad_bytes_filtered > 0) {
         fprintf(stderr, "shrike: %zu rejected by --bad-bytes\n",
                 pc.bad_bytes_filtered);
+    }
+
+    /* v0.20.0: --intersect reports how many unique gadgets survived
+     * cross-input dedup (i.e. the size of the intersection). */
+    if (intersect) {
+        fprintf(stderr, "shrike: --intersect: %zu unique gadgets across %zu inputs\n",
+                pc.seen.used, n_paths);
     }
 
     /* Category histogram on stderr when non-trivial output was produced. */
