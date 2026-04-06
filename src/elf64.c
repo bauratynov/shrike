@@ -49,6 +49,11 @@ static int parse(elf64_t *e)
     if (eh->e_ident[4] != ELFCLASS64 || eh->e_ident[5] != ELFDATA2LSB) {
         errno = ENOTSUP; return -1;
     }
+    if (eh->e_machine == EM_RISCV) {
+        /* v0.24.0: RISC-V scanner is pending; return a distinct code
+         * so main() can emit an actionable message. */
+        errno = ENOTSUP; return -4;
+    }
     if (eh->e_machine != EM_X86_64 && eh->e_machine != EM_AARCH64) {
         errno = ENOTSUP; return -1;
     }
@@ -121,7 +126,7 @@ int elf64_load(const char *path, elf64_t *out)
         errno = saved;
         /* Pass hint back through errno so callers can give a useful
          * message without changing the public API. */
-        return rc == -2 ? -2 : rc == -3 ? -3 : -1;
+        return rc == -2 ? -2 : rc == -3 ? -3 : rc == -4 ? -4 : -1;
         (void)hint;
     }
     return 0;

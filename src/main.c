@@ -604,6 +604,13 @@ int main(int argc, char **argv)
                     "via 'otool -s __TEXT __text | xxd -r' and pass "
                     "--raw --raw-arch <x86_64|aarch64> --raw-base 0x<vaddr>.\n",
                     path);
+            } else if (lrc == -4) {
+                fprintf(stderr,
+                    "shrike: %s: RISC-V ELF detected. RV64 native scan "
+                    "is planned for v0.25+; meanwhile use "
+                    "'--raw --raw-arch riscv --raw-base 0x<vaddr>' "
+                    "(coarse scan, no terminator heuristics yet).\n",
+                    path);
             } else {
                 fprintf(stderr, "shrike: %s: %s\n", path, strerror(errno));
             }
