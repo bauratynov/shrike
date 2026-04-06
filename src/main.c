@@ -590,8 +590,23 @@ int main(int argc, char **argv)
     for (size_t pi = 0; pi < n_paths && !pc.stop_signal; pi++) {
         const char *path = paths[pi];
         elf64_t e;
-        if (elf64_load(path, &e) < 0) {
-            fprintf(stderr, "shrike: %s: %s\n", path, strerror(errno));
+        int lrc = elf64_load(path, &e);
+        if (lrc < 0) {
+            if (lrc == -2) {
+                fprintf(stderr,
+                    "shrike: %s: PE/COFF detected. Extract the .text "
+                    "with 'objcopy -O binary --only-section=.text' and "
+                    "pass --raw --raw-arch x86_64 --raw-base 0x<vaddr>.\n",
+                    path);
+            } else if (lrc == -3) {
+                fprintf(stderr,
+                    "shrike: %s: Mach-O detected. Extract __TEXT,__text "
+                    "via 'otool -s __TEXT __text | xxd -r' and pass "
+                    "--raw --raw-arch <x86_64|aarch64> --raw-base 0x<vaddr>.\n",
+                    path);
+            } else {
+                fprintf(stderr, "shrike: %s: %s\n", path, strerror(errno));
+            }
             had_error = 1;
             continue;
         }

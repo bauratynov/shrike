@@ -31,6 +31,19 @@ static int parse(elf64_t *e)
 
     if (eh->e_ident[0] != ELFMAG0 || eh->e_ident[1] != ELFMAG1 ||
         eh->e_ident[2] != ELFMAG2 || eh->e_ident[3] != ELFMAG3) {
+        /* v0.22.0: give a specific hint for common non-ELF containers */
+        if (e->size >= 2 && e->map[0] == 'M' && e->map[1] == 'Z') {
+            /* PE/COFF (DOS stub: 'MZ') */
+            errno = ENOTSUP; return -2;
+        }
+        if (e->size >= 4 &&
+            ((e->map[0] == 0xCF && e->map[1] == 0xFA &&
+              e->map[2] == 0xED && e->map[3] == 0xFE) ||
+             (e->map[0] == 0xCA && e->map[1] == 0xFE &&
+              e->map[2] == 0xBA && e->map[3] == 0xBE))) {
+            /* Mach-O 64 LE or universal 'fat' magic */
+            errno = ENOTSUP; return -3;
+        }
         errno = EINVAL; return -1;
     }
     if (eh->e_ident[4] != ELFCLASS64 || eh->e_ident[5] != ELFDATA2LSB) {
@@ -99,12 +112,17 @@ int elf64_load(const char *path, elf64_t *out)
     out->size = (size_t)st.st_size;
     out->owns = 1;
 
-    if (parse(out) < 0) {
+    int rc = parse(out);
+    if (rc < 0) {
         int saved = errno;
+        int hint  = rc;       /* -2 = PE, -3 = Mach-O */
         munmap((void *)out->map, out->size);
         memset(out, 0, sizeof(*out));
         errno = saved;
-        return -1;
+        /* Pass hint back through errno so callers can give a useful
+         * message without changing the public API. */
+        return rc == -2 ? -2 : rc == -3 ? -3 : -1;
+        (void)hint;
     }
     return 0;
 }
