@@ -312,6 +312,9 @@ int main(int argc, char **argv)
     int         jop_mode     = 0;     /* v0.18.0: JOP / COP shortcut  */
     int         cet_posture  = 0;     /* v0.19.0: IBT/SHSTK/BTI flags */
     int         intersect    = 0;     /* v0.20.0: count shared gadgets */
+    int         raw_mode     = 0;     /* v0.21.0: headerless blob     */
+    const char *raw_arch     = "x86_64";
+    uint64_t    raw_base     = 0;
     size_t      limit  = 0;
     const char *filter = NULL;
     const char *regex  = NULL;
@@ -378,6 +381,10 @@ int main(int argc, char **argv)
             cat_tag  = 1;
         } else if (!strcmp(a, "--cet-posture"))              { cet_posture = 1;
         } else if (!strcmp(a, "--intersect"))                { intersect = 1;
+        } else if (!strcmp(a, "--raw"))                      { raw_mode = 1;
+        } else if (!strcmp(a, "--raw-arch") && i + 1 < argc) { raw_arch = argv[++i];
+        } else if (!strcmp(a, "--raw-base") && i + 1 < argc) {
+            raw_base = strtoull(argv[++i], NULL, 0);
         } else if ((!strcmp(a, "--format") || !strcmp(a, "-p"))
                    && i + 1 < argc) {
             const char *v = argv[++i];
@@ -545,6 +552,41 @@ int main(int argc, char **argv)
     int ri_initialised = 0;
     uint16_t first_arch = 0;
 
+    /* v0.21.0: raw-blob mode. Scan the first path as a headerless
+     * buffer with user-supplied arch+base; skip ELF parsing. */
+    if (raw_mode) {
+        if (n_paths != 1) {
+            fprintf(stderr, "shrike: --raw takes exactly one input\n");
+            return 2;
+        }
+        uint16_t m = !strcmp(raw_arch, "aarch64") ? EM_AARCH64 : EM_X86_64;
+        FILE *fp = fopen(paths[0], "rb");
+        if (!fp) { fprintf(stderr, "shrike: %s: %s\n",
+                           paths[0], strerror(errno)); return 1; }
+        fseek(fp, 0, SEEK_END); long sz = ftell(fp); fseek(fp, 0, SEEK_SET);
+        if (sz <= 0) { fclose(fp); fprintf(stderr, "shrike: empty input\n"); return 1; }
+        uint8_t *buf = malloc((size_t)sz);
+        if (!buf || fread(buf, 1, (size_t)sz, fp) != (size_t)sz) {
+            fprintf(stderr, "shrike: read failed\n");
+            free(buf); fclose(fp); return 1;
+        }
+        fclose(fp);
+
+        elf64_segment_t seg;
+        memset(&seg, 0, sizeof seg);
+        seg.bytes   = buf;
+        seg.size    = (size_t)sz;
+        seg.vaddr   = raw_base;
+        seg.flags   = PF_R | PF_X;
+        seg.machine = m;
+
+        pc.src = paths[0];
+        scan_segment(&seg, &cfg, emit_cb, &pc);
+
+        free(buf);
+        goto after_scan;
+    }
+
     for (size_t pi = 0; pi < n_paths && !pc.stop_signal; pi++) {
         const char *path = paths[pi];
         elf64_t e;
@@ -709,6 +751,7 @@ int main(int argc, char **argv)
         }
     }
 
+after_scan:
     /* v0.13.0 close SARIF. */
     if (sarif) {
         shrike_sarif_emitter_current = NULL;
