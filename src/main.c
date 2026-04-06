@@ -310,6 +310,7 @@ int main(int argc, char **argv)
     int         wx_check    = 0;      /* v0.16.0: W^X segment audit */
     int         density_mode = 0;     /* v0.17.0: ROPecker histogram */
     int         jop_mode     = 0;     /* v0.18.0: JOP / COP shortcut  */
+    int         cet_posture  = 0;     /* v0.19.0: IBT/SHSTK/BTI flags */
     size_t      limit  = 0;
     const char *filter = NULL;
     const char *regex  = NULL;
@@ -370,11 +371,11 @@ int main(int argc, char **argv)
         } else if (!strcmp(a, "--wx-check"))                 { wx_check = 1;
         } else if (!strcmp(a, "--density"))                  { density_mode = 1;
         } else if (!strcmp(a, "--jop")) {
-            /* shortcut: --category indirect --unique --cat-tag */
             jop_mode = 1;
             cat_mask = 1u << CAT_INDIRECT;
             unique   = 1;
             cat_tag  = 1;
+        } else if (!strcmp(a, "--cet-posture"))              { cet_posture = 1;
         } else if ((!strcmp(a, "--format") || !strcmp(a, "-p"))
                    && i + 1 < argc) {
             const char *v = argv[++i];
@@ -559,6 +560,64 @@ int main(int argc, char **argv)
             ri_initialised = 1;
         }
         if (pivots_mode && pivots_machine == 0) pivots_machine = e.machine;
+
+        /* v0.19.0: CET / BTI posture — parse PT_GNU_PROPERTY */
+        if (cet_posture) {
+            int ibt = 0, shstk = 0, bti = 0, found = 0;
+            for (size_t pi2 = 0; pi2 < e.phnum; pi2++) {
+                const Elf64_Phdr *ph = &e.phdr[pi2];
+                if (ph->p_type != PT_GNU_PROPERTY) continue;
+                const uint8_t *p = e.map + ph->p_offset;
+                const uint8_t *end = p + ph->p_filesz;
+                /* Elf64_Nhdr: namesz(4) descsz(4) type(4), name (aligned 4),
+                 * desc (aligned 4). GNU property note has type == 5
+                 * (NT_GNU_PROPERTY_TYPE_0) and name = "GNU\0". */
+                while (p + 12 <= end) {
+                    uint32_t namesz = *(const uint32_t *)p;
+                    uint32_t descsz = *(const uint32_t *)(p + 4);
+                    uint32_t ntype  = *(const uint32_t *)(p + 8);
+                    const uint8_t *pname = p + 12;
+                    const uint8_t *pdesc = pname + ((namesz + 3) & ~3u);
+                    const uint8_t *pnext = pdesc + ((descsz + 7) & ~7u);
+                    if (pnext > end) break;
+                    if (ntype == 5 && namesz >= 4 &&
+                        memcmp(pname, "GNU", 4) == 0) {
+                        const uint8_t *q = pdesc;
+                        while (q + 8 <= pdesc + descsz) {
+                            uint32_t ptype = *(const uint32_t *)q;
+                            uint32_t pdsz  = *(const uint32_t *)(q + 4);
+                            const uint8_t *pd = q + 8;
+                            if (pd + pdsz > pdesc + descsz) break;
+                            /* GNU_PROPERTY_X86_FEATURE_1_AND = 0xc0000002 */
+                            if (ptype == 0xc0000002u && pdsz == 4) {
+                                uint32_t f = *(const uint32_t *)pd;
+                                if (f & 1) ibt = 1;
+                                if (f & 2) shstk = 1;
+                                found = 1;
+                            }
+                            /* GNU_PROPERTY_AARCH64_FEATURE_1_AND = 0xc0000000 */
+                            if (ptype == 0xc0000000u && pdsz == 4) {
+                                uint32_t f = *(const uint32_t *)pd;
+                                if (f & 1) bti = 1;
+                                found = 1;
+                            }
+                            q = pd + ((pdsz + 7) & ~7u);
+                        }
+                    }
+                    p = pnext;
+                }
+            }
+            fprintf(stdout, "# cet-posture %s:", path);
+            if (!found) fputs(" (no GNU_PROPERTY note)\n", stdout);
+            else {
+                if (e.machine == EM_AARCH64) {
+                    fprintf(stdout, " BTI=%s\n", bti ? "on" : "off");
+                } else {
+                    fprintf(stdout, " IBT=%s SHSTK=%s\n",
+                            ibt ? "on" : "off", shstk ? "on" : "off");
+                }
+            }
+        }
 
         if (!quiet && !json) {
             fprintf(stdout, "# file: %s\n", path);

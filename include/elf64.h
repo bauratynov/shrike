@@ -29,7 +29,9 @@ extern "C" {
 #define ET_EXEC 2
 #define ET_DYN  3
 
-#define PT_LOAD   1
+#define PT_LOAD         1
+#define PT_NOTE         4
+#define PT_GNU_PROPERTY 0x6474e553
 
 #define PF_X 1u
 #define PF_W 2u
