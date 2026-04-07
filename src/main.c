@@ -315,6 +315,7 @@ int main(int argc, char **argv)
     int         raw_mode     = 0;     /* v0.21.0: headerless blob     */
     const char *raw_arch     = "x86_64";
     uint64_t    raw_base     = 0;
+    int         cdx_props    = 0;     /* v0.26.0 */
     size_t      limit  = 0;
     const char *filter = NULL;
     const char *regex  = NULL;
@@ -381,6 +382,7 @@ int main(int argc, char **argv)
             cat_tag  = 1;
         } else if (!strcmp(a, "--cet-posture"))              { cet_posture = 1;
         } else if (!strcmp(a, "--intersect"))                { intersect = 1;
+        } else if (!strcmp(a, "--cdx-props"))                { cdx_props = 1;
         } else if (!strcmp(a, "--raw"))                      { raw_mode = 1;
         } else if (!strcmp(a, "--raw-arch") && i + 1 < argc) { raw_arch = argv[++i];
         } else if (!strcmp(a, "--raw-base") && i + 1 < argc) {
@@ -750,6 +752,20 @@ int main(int argc, char **argv)
     if (intersect) {
         fprintf(stderr, "shrike: --intersect: %zu unique gadgets across %zu inputs\n",
                 pc.seen.used, n_paths);
+    }
+
+    if (cdx_props) {
+        fprintf(stdout,
+"{\"properties\":["
+"{\"name\":\"shrike:gadgets\",\"value\":\"%zu\"},"
+"{\"name\":\"shrike:syscall\",\"value\":\"%zu\"},"
+"{\"name\":\"shrike:stack_pivot\",\"value\":\"%zu\"},"
+"{\"name\":\"shrike:indirect\",\"value\":\"%zu\"}"
+"]}\n",
+            pc.total,
+            pc.cat_counts[CAT_SYSCALL],
+            pc.cat_counts[CAT_STACK_PIVOT],
+            pc.cat_counts[CAT_INDIRECT]);
     }
 
     /* Category histogram on stderr when non-trivial output was produced. */
