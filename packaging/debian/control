@@ -1,0 +1,16 @@
+Source: shrike
+Section: devel
+Priority: optional
+Maintainer: Baurzhan Atynov <bauratynov@gmail.com>
+Build-Depends: debhelper-compat (= 13), gcc
+Standards-Version: 4.6.0
+Homepage: https://github.com/bauratynov/shrike
+
+Package: shrike
+Architecture: amd64 arm64
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: x86-64 / AArch64 ROP gadget finder
+ A minimal, dependency-free gadget scanner for ELF64 binaries.
+ Recognises pop / mov / arith / stack-pivot / syscall / indirect
+ terminators; emits text, JSON, SARIF, pwntools-compatible Python,
+ or a register-control index.
