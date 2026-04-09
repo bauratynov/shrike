@@ -6,170 +6,122 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Language: C99](https://img.shields.io/badge/Language-C99-blue.svg)](https://en.wikipedia.org/wiki/C99)
-[![Platform: x86-64](https://img.shields.io/badge/Platform-x86__64-green.svg)](https://refspecs.linuxfoundation.org/elf/)
+[![Platform: x86-64 + aarch64](https://img.shields.io/badge/Platform-x86__64%20%2B%20aarch64-green.svg)](https://refspecs.linuxfoundation.org/elf/)
+[![Release: 1.0.0](https://img.shields.io/badge/Release-1.0.0-brightgreen.svg)](CHANGELOG.md)
 
-Minimal ROP gadget finder for x86-64 ELF64 binaries, written from
-scratch in pure C99. Parses the ELF, walks executable PT_LOAD
-segments, decodes instruction lengths with a small table-driven
-decoder, and enumerates return-terminated gadget sequences.
+**Freestanding C99 ROP gadget scanner.** x86-64 and AArch64. Zero
+runtime dependencies. One static binary you drop on any Linux host
+— distroless container, air-gapped workstation, hardened FIPS
+build environment.
 
-Named after the shrike — a songbird that impales its prey on thorns
-for later retrieval. Appropriate.
-
-> **Status:** v0.9.0 — dual‑arch (x86_64 + aarch64), filters
-> (substring / regex / unique / limit / category / bad‑bytes),
-> CET (x86) + BTI (aarch64) classification, JSON output,
-> multi‑binary audit, ASLR‑safe gadget diff between binaries.
-> See [CHANGELOG.md](CHANGELOG.md).
+> **1.0.0 — stable.** API frozen, JSON + SARIF schemas frozen,
+> exit codes frozen. See [STABILITY.md](STABILITY.md) for the
+> contract. See [CHANGELOG.md](CHANGELOG.md) for every minor since
+> 0.1.0.
 
 ---
 
-## Why
-
-[ROPgadget](https://github.com/JonathanSalwan/ROPgadget) exists and
-is excellent. It is also Python with a large dependency tree.
-`shrike` is the thing you put in a static binary to drop onto a
-locked-down audit host — same output shape, zero runtime
-dependencies, auditable in an afternoon. It also pairs naturally
-with [lbr-hunt](https://github.com/bauratynov/lbr-hunt): static
-gadget enumeration (shrike) + runtime chain detection via Intel LBR.
-
-## Design
-
-- **C99, no external dependencies** beyond `<string.h>` / `<stdio.h>` /
-  `<sys/mman.h>`. One source tree, readable end-to-end.
-- **Bounds-checked ELF loader.** Every offset validated against file
-  size before dereferencing. Malformed binaries refused, not parsed
-  into undefined behaviour.
-- **Table-driven length decoder.** A 256-entry primary opcode map,
-  a classifier for the 0x0F two-byte map, and generous defaults for
-  the 3-byte 0x38 / 0x3A maps. Sufficient for gadget enumeration;
-  not a full disassembler.
-- **Walk backward from terminators.** For each `ret` / `retf` / `int`
-  / `syscall` / `sysret` / indirect `call` / indirect `jmp` byte,
-  try decoding instruction chains backwards; emit sequences that
-  land exactly on the terminator.
-
-## Build
+## What it does
 
 ```bash
-make
-./shrike /bin/ls
+# Classic
+shrike /bin/ls
+
+# JSON for jq pipelines
+shrike --json /bin/bash | jq 'select(.category == "pop")'
+
+# Exploit skeleton with cyclic placeholders
+shrike /bin/bash /lib/x86_64-linux-gnu/libc.so.6 \
+    --recipe 'rdi=*; rsi=*; rdx=*; rax=59; syscall' \
+    --format pwntools > exploit.py
+
+# SARIF for GitHub Code Scanning
+shrike --sarif --sarif-cap 2000 dist/*.so > shrike.sarif
+
+# What did the new libc release change?
+shrike --diff /old/libc.so.6 /new/libc.so.6 | head
+
+# Scan a PE .text extracted with objcopy
+objcopy -O binary --only-section=.text foo.exe foo.text
+shrike --raw --raw-arch x86_64 --raw-base 0x401000 foo.text
+
+# Hardening posture of every binary in dist/
+shrike --cet-posture --wx-check dist/*.so
 ```
 
-## Usage
+Ten more in [examples/README.md](examples/README.md).
+
+## Features
+
+| | |
+|---|---|
+| **Architectures** | x86-64, AArch64. PE/Mach-O via `--raw`. |
+| **Terminators** | RET family, SYSCALL, SVC, INT3, indirect CALL/JMP, BR/BLR. |
+| **Classification** | pop · mov · arith · stack_pivot · syscall · indirect · ret_only. |
+| **CET / BTI** | `.note.gnu.property` parsing; `shstk_blocked` + `starts_endbr` per gadget; ENDBR64 / ENDBR32 / BTI mnemonic recognition. |
+| **Composition** | Register-control index (text / pwntools dict / JSON); `--recipe` DSL; stack pivot atlas. |
+| **Outputs** | Text, JSON-Lines, SARIF 2.1.0, pwntools-compatible Python, CycloneDX property block. |
+| **Filters** | Substring, POSIX regex, unique, canonical (semantic dedup), limit, category, bad-bytes. |
+| **Multi-binary** | N inputs per invocation, cross-input dedup, `--intersect`, `--diff`. |
+| **Hardening audit** | `--wx-check`, `--cet-posture`, `--cdx-props`. |
+| **Ecosystem** | Ghidra import script, HTTP gateway wrapper, Dockerfile, deb/rpm packaging. |
+| **Quality** | AFL++ + libFuzzer, ASan + UBSan CI, cppcheck, GitHub Code Scanning integration, benchmarks. |
+
+## Install
 
 ```bash
-# Dump all gadgets in /bin/ls
-./shrike /bin/ls
+# From source
+make && sudo make install
 
-# Longer gadgets, wider scan, summary-only output
-./shrike --max-insn 8 --back 64 --quiet /bin/bash
+# Release tarball (signed with minisign — key in packaging/)
+curl -LO https://github.com/bauratynov/shrike/releases/download/v1.0.0/shrike-linux-x86_64.tar.gz
+sha256sum -c shrike-linux-x86_64.tar.gz.sha256
+tar xzf shrike-linux-x86_64.tar.gz
 
-# Only plain RET-terminated gadgets (skip syscall / int / indirect)
-./shrike --no-syscall --no-int --no-ind /bin/ls
-
-# v0.2.0: search for a specific gadget without shelling through grep
-./shrike --filter 'pop rdi ; ret' /bin/bash
-
-# v0.2.0: one copy of each distinct chain, stop after 50
-./shrike --unique --limit 50 /bin/bash
-
-# Compose: every unique "pop rdi" chain, up to 20
-./shrike --unique --filter 'pop rdi' --limit 20 /bin/bash
-
-# v0.3.0: POSIX regex — all "pop r?? ; ret" single-pop gadgets
-./shrike --regex '^0x[0-9a-f]+: pop r[a-z]+ ; ret$' /bin/bash
-
-# v0.3.0: JSON-Lines output, pipe into jq
-./shrike --json /bin/ls | jq 'select(.insn_count == 2)'
-
-# v0.3.0: gadget audit in CI — fail if a syscall gadget exists
-./shrike --regex 'syscall' --limit 1 dist/my-service && exit 1
-
-# v0.4.0: only gadgets that survive full CET (non-RET terminator,
-# ENDBR64 at start so IBT lets indirect branches land here)
-./shrike --shstk-survivable --endbr dist/my-service
-
-# v0.4.0: annotate text output with CET classifications
-./shrike --cet-tag /bin/bash | grep -v SHSTK-BLOCKED
+# Docker (scratch image, ~900 KB)
+docker build -f packaging/Dockerfile -t shrike:1.0.0 .
+docker run --rm -v /bin:/host shrike:1.0.0 --quiet /host/ls
 ```
-
-Example output:
-
-```
-# file: /bin/ls
-# type: ET_DYN  entry: 0x6ab0  segments: 2
-# segment[0]: vaddr=0x0000000000001000  bytes=24288
-0x000000000000108c: pop rbp ; ret
-0x0000000000001290: pop rdi ; ret
-0x0000000000001292: ret
-0x000000000000218c: xor eax, eax ; ret
-...
-shrike: 1284 gadgets emitted
-```
-
-## Exit codes
-
-| Code | Meaning                                   |
-|------|-------------------------------------------|
-| 0    | clean run                                 |
-| 1    | runtime error (unreadable file, mmap fail)|
-| 2    | bad invocation                            |
 
 ## Layout
 
 ```
 shrike/
-├── LICENSE / SECURITY.md / CHANGELOG.md
-├── Makefile
-├── include/{elf64,xdec,scan,format}.h
-├── src/elf64.c         # bounds-checked loader
-├── src/xdec.c          # x86-64 length decoder
-├── src/scan.c          # backward gadget scanner
-├── src/format.c        # mnemonic printer + hex fallback
-├── src/main.c          # CLI
-├── tests/
-│   ├── test_xdec.c     # 40+ length-decoder unit cases
-│   ├── test_scan.c     # scanner unit cases
-│   └── integration.sh  # /bin/ls, /bin/bash, /bin/cat smoke
-├── docs/hero.svg
-└── .github/workflows/ci.yml
+├── src/            scanners, classifiers, formatters, CLI
+├── include/        public headers
+├── tests/          35+ unit tests + integration harness
+├── fuzz/           AFL++ / libFuzzer drivers + seed corpus
+├── bench/          repeatable performance baseline
+├── docs/           shrike(1) man page, launch kit, hero SVG
+├── examples/       10 common recipes
+├── plugins/ghidra/ companion import script
+├── packaging/      Dockerfile, debian/, shrike.spec
+├── tools/          shrike-serve.sh HTTP gateway
+├── .github/        CI + release workflows
+├── ROADMAP.md      29-sprint plan (v0.10 → v1.0) — complete
+└── STABILITY.md    1.x API contract
 ```
 
-## Roadmap
+## Roadmap (post 1.0)
 
-- [x] Sprint 1: ELF64 loader + CLI skeleton
-- [x] Sprint 2: x86-64 length decoder + unit tests
-- [x] Sprint 3: gadget scanner + mnemonic printer
-- [x] Sprint 4: CI + integration tests + v0.1.0
-- [x] v0.2.0: `--filter` / `--unique` / `--limit` + more mnemonics
-- [x] v0.3.0: `--json` output + `--regex` POSIX filter
-- [x] v0.4.0: CET‑aware classification (SHSTK + IBT / ENDBR64)
-- [x] v0.5.0: AArch64 support + BTI landing‑pad classifier
-- [x] v0.6.0: 8‑way gadget categorisation + `--category` / `--cat-tag`
-- [x] v0.7.0: `--bad-bytes` — reject gadgets whose address has bad bytes
-- [x] v0.8.0: multi‑binary audit — scan N inputs, dedup across the set
-- [x] v0.9.0: `--diff OLD NEW` — ASLR‑safe set difference of gadgets
-- [ ] v0.10.0: gadget chain composer — given a goal, find a chain
+- **1.1** — native PE/COFF and Mach-O loaders
+- **1.2** — RISC-V RV64GC scanner
+- **1.3** — multi-pop permutation search in `--recipe` + stack-slot
+  accounting (pwntools-style optimal chain)
+- **2.0** — stable C API (pre-built `libshrike.so`)
 
 ## Companion tools
 
 - [lbr-hunt](https://github.com/bauratynov/lbr-hunt) — runtime ROP
-  detection via Intel LBR. Static enumeration (shrike) + runtime
-  detection (lbr-hunt) gives full-coverage mitigation audit.
+  detection via Intel LBR.
 - [checkhard](https://github.com/bauratynov/checkhard) — ELF
-  hardening auditor: PIE, NX, RELRO, canary, FORTIFY, RPATH, RWX.
+  hardening auditor.
 
 ## References
 
-- Shacham, H. *The Geometry of Innocent Flesh on the Bone:
-  Return-into-libc without Function Calls (on the x86)*, CCS 2007 —
-  the original ROP paper.
-- Intel® 64 and IA-32 Architectures Software Developer's Manual,
-  Vol. 2: Instruction Set Reference.
-- [ROPgadget](https://github.com/JonathanSalwan/ROPgadget) — the
-  Python reference that `shrike` converges toward in scope.
+- Shacham, *The Geometry of Innocent Flesh on the Bone*, CCS 2007
+- Intel SDM Vol 2/3A · ARM ARM C3/C4/C6 · SARIF 2.1.0 OASIS spec
+- Predecessors: [ROPgadget](https://github.com/JonathanSalwan/ROPgadget), [Ropper](https://github.com/sashs/Ropper), [rp++](https://github.com/0vercl0k/rp)
 
 ## License
 
