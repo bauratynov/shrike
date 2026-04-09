@@ -1,0 +1,41 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-linux:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            arch: x86_64
+            name: shrike-linux-x86_64
+          - os: ubuntu-22.04-arm
+            arch: aarch64
+            name: shrike-linux-aarch64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: build static binary
+        run: |
+          make CC=gcc CFLAGS="-std=c99 -Wall -Wextra -O2 -static -Iinclude -D_GNU_SOURCE"
+          ls -la shrike
+      - name: tarball
+        run: |
+          mkdir -p dist
+          cp shrike dist/
+          cp LICENSE README.md CHANGELOG.md dist/
+          cp docs/shrike.1 dist/ 2>/dev/null || true
+          tar czf ${{ matrix.name }}.tar.gz -C dist .
+          sha256sum ${{ matrix.name }}.tar.gz > ${{ matrix.name }}.tar.gz.sha256
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ${{ matrix.name }}.tar.gz
+            ${{ matrix.name }}.tar.gz.sha256
