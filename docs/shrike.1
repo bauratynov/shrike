@@ -1,0 +1,138 @@
+.\" shrike(1) — x86-64 / AArch64 ROP gadget finder
+.TH SHRIKE 1 "2026-04-18" "shrike 1.0.0" "User Commands"
+
+.SH NAME
+shrike \- find, classify and compose ROP/JOP gadgets in ELF64 binaries
+
+.SH SYNOPSIS
+.B shrike
+.RI [ options ]
+.I FILE...
+
+.SH DESCRIPTION
+.B shrike
+walks the executable PT_LOAD segments of one or more ELF64 binaries
+(x86-64 or AArch64), enumerates ROP/JOP gadgets, and emits them in
+plain text (default), JSON-Lines, SARIF 2.1.0, pwntools-compatible
+Python, or a category-aware CycloneDX SBOM property block.
+
+.SH OPTIONS
+
+.SS Scan configuration
+.TP
+.B --max-insn N
+Maximum instructions per gadget (default 5).
+.TP
+.B --back N
+Maximum bytes to scan back from each terminator on x86-64 (48).
+.TP
+.B --no-syscall | --no-int | --no-ind
+Skip respective terminator class.
+
+.SS Output filtering
+.TP
+.B --filter PATTERN
+Substring match against the mnemonic line.
+.TP
+.B --regex PATTERN
+POSIX regex against the mnemonic line.
+.TP
+.B --unique
+Deduplicate identical mnemonic chains.
+.TP
+.B --canonical
+Implies --unique; collapses semantically equivalent gadgets
+(e.g. xor reg,reg → ZERO(reg), retn 0 → ret).
+.TP
+.B --limit N
+Stop after N emitted gadgets.
+.TP
+.B --category CSV
+Keep only gadgets whose category is in the list
+(pop, mov, arith, stack_pivot, syscall, indirect, ret_only, other).
+.TP
+.B --bad-bytes CSV
+Reject gadgets whose address contains any of the listed bytes.
+
+.SS CET / BTI classification
+.TP
+.B --shstk-survivable
+Keep only non-RET terminators.
+.TP
+.B --endbr
+Keep only gadgets starting at ENDBR64 (x86) / BTI (aarch64).
+.TP
+.B --cet-tag
+Append [SHSTK-BLOCKED]/[ENDBR/BTI] inline.
+.TP
+.B --cet-posture
+Parse PT_GNU_PROPERTY and report IBT/SHSTK/BTI flags.
+
+.SS Specialised modes
+.TP
+.B --reg-index | --reg-index-python | --reg-index-json
+Register-control index (table / pwntools dict / JSON).
+.TP
+.B --recipe SRC
+DSL chain composer; combine with --format pwntools.
+.TP
+.B --pivots | --pivots-json
+Stack pivot atlas sorted by |delta|.
+.TP
+.B --sarif
+SARIF 2.1.0 for GitHub Code Scanning.
+.TP
+.B --diff
+Two inputs only; symmetric difference of canonical gadgets.
+.TP
+.B --raw --raw-arch ARCH --raw-base ADDR
+Scan a headerless blob (for PE/Mach-O .text extracts).
+.TP
+.B --cdx-props
+Emit a CycloneDX properties block summarising gadget counts.
+.TP
+.B --density
+Per-segment histogram of gadgets per 4 KB window.
+.TP
+.B --wx-check
+Flag W+X PT_LOAD segments (and exit with code 1).
+
+.SH EXIT CODES
+.IP 0
+All inputs scanned cleanly, no policy violations.
+.IP 1
+Runtime error, W^X violation, recipe missing a gadget, or load
+error on any input.
+.IP 2
+Bad invocation (malformed flags, missing required arguments).
+
+.SH EXAMPLES
+Dump every pop/ret in /bin/bash:
+.PP
+.RS
+shrike --category pop /bin/bash
+.RE
+.PP
+Find every deduplicated "pop rdi ; ret" whose address has no null
+or newline byte:
+.PP
+.RS
+shrike --filter 'pop rdi ; ret' --bad-bytes 0x00,0x0a --unique /bin/bash
+.RE
+.PP
+Generate an exploit skeleton for an execve chain:
+.PP
+.RS
+shrike /bin/bash /lib/x86_64-linux-gnu/libc.so.6 \\
+    --recipe 'rdi=*; rsi=*; rdx=*; rax=59; syscall' \\
+    --format pwntools > exploit.py
+.RE
+
+.SH AUTHOR
+Baurzhan Atynov <bauratynov@gmail.com>
+
+.SH SEE ALSO
+.BR readelf (1),
+.BR objcopy (1),
+.BR checkhard (1),
+.BR lbr-hunt (1).
