@@ -1,0 +1,9 @@
+# shrike bench baseline — i7-13700, ubuntu-24.04 CI runner
+# Run with: bench/bench.sh > /tmp/out; diff bench/baseline.txt /tmp/out
+# Values are indicative; regressions of > 2x should trigger review.
+
+binary                                        wall_ms        gadgets
+/bin/ls                                            50           7986
+/bin/bash                                         320          72008
+/bin/cat                                           20           2064
+/lib/x86_64-linux-gnu/libc.so.6                  1200         312450
