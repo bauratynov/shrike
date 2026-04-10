@@ -55,8 +55,11 @@ jobs:
       - uses: actions/checkout@v4
       - name: sanitized build + unit tests
         run: |
-          make -C tests clean
-          make -C tests run \
-            CC=clang \
-            CFLAGS="-std=c99 -Wall -Wextra -O1 -g -I../include \
-                    -fsanitize=address,undefined -fno-omit-frame-pointer"
+          make clean
+          SAN_CFLAGS="-std=c99 -Wall -Wextra -O1 -g -Iinclude -D_GNU_SOURCE \
+                      -fsanitize=address,undefined -fno-omit-frame-pointer"
+          make CC=clang CFLAGS="$SAN_CFLAGS" \
+               LDFLAGS="-fsanitize=address,undefined"
+          make -C tests run CC=clang \
+               CFLAGS="-std=c99 -Wall -Wextra -O1 -g -I../include \
+                       -fsanitize=address,undefined -fno-omit-frame-pointer"

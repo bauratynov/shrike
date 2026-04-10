@@ -3,6 +3,30 @@
 All notable changes to `shrike` are listed here. Project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] — 2026-04-18
+
+**Static-library split.** First step on the [V2 roadmap](V2_ROADMAP.md):
+`make` now builds both `libshrike.a` and the `shrike` CLI. The binary
+links against the archive; tests link against it too. No behavioural
+changes — this is purely a build-system refactor that sets up the
+shared-library and stable-C-API work in 1.1.x.
+
+### Changes
+- Top-level `Makefile` split into `LIB_SRC` (everything except
+  `main.c`) + `CLI_SRC` (just `main.c`). `libshrike.a` produced with
+  `ar rcs` + `ranlib`.
+- `tests/Makefile` depends on `../libshrike.a` and links each test
+  binary against the archive instead of recompiling every source
+  file inline. Faster incremental tests.
+- ASan / UBSan CI job rebuilds the whole tree with sanitizer flags
+  so the library (not just the test driver) is instrumented.
+- Fuzz harness unchanged — it builds a single translation unit
+  (`xdec.c`) directly to get AFL / libFuzzer instrumentation.
+
+### Not yet
+Public headers still live in `include/*.h` (not `include/shrike/*.h`).
+That — plus the `shrike/version.h` macros — lands in v1.1.1.
+
 ## [1.0.0] — 2026-04-18
 
 **First stable release.** API, JSON schema, SARIF shape, and
