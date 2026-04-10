@@ -3,6 +3,36 @@
 All notable changes to `shrike` are listed here. Project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.2] — 2026-04-18
+
+**pkg-config + proper `make install`.** Installing shrike now
+produces a real Unix library layout: binary in `$(PREFIX)/bin`,
+library in `$(PREFIX)/lib`, headers in
+`$(PREFIX)/include/shrike/`, and a `shrike.pc` file in
+`$(PREFIX)/lib/pkgconfig/` so downstream consumers can do
+`pkg-config --cflags --libs shrike` instead of hardcoding paths.
+
+### Changes
+- `packaging/shrike.pc.in` — template with `@VERSION@`, `@PREFIX@`,
+  `@LIBDIR@`, `@INCLUDEDIR@` placeholders. Built into `shrike.pc`
+  by the top-level Makefile.
+- Makefile install layout: `PREFIX` (default `/usr/local`),
+  `BINDIR`, `LIBDIR`, `INCLUDEDIR`, `PCDIR` all overridable;
+  `DESTDIR` respected for staged installs. A single source of
+  truth for the version string — derived from
+  `<shrike/version.h>` via awk so the Makefile can't drift from
+  the header.
+- `make uninstall` target for symmetry.
+- CI `install-smoke` job: `make install DESTDIR=staging`, verifies
+  files land in the expected places, then compiles a tiny
+  consumer using `$(pkg-config --cflags --libs shrike)` and runs
+  it. Catches regressions in the `.pc` file and the header
+  layout simultaneously.
+
+### Not yet
+Only `libshrike.a` is shipped; users get static linking only.
+`libshrike.so.1` with proper `soname` lands in v1.1.3.
+
 ## [1.1.1] — 2026-04-18
 
 **Versioned public headers.** All public headers move from

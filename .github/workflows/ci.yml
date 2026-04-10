@@ -48,6 +48,43 @@ jobs:
                    --error-exitcode=1 --quiet \
                    -Iinclude src/ tests/
 
+  install-smoke:
+    name: make install + pkg-config
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: install into staging prefix
+        run: |
+          make install PREFIX=/usr DESTDIR="$PWD/staging"
+      - name: verify layout
+        run: |
+          test -x staging/usr/bin/shrike
+          test -f staging/usr/lib/libshrike.a
+          test -f staging/usr/lib/pkgconfig/shrike.pc
+          test -f staging/usr/include/shrike/version.h
+          test -f staging/usr/include/shrike/scan.h
+      - name: pkg-config resolves
+        run: |
+          export PKG_CONFIG_PATH="$PWD/staging/usr/lib/pkgconfig"
+          pkg-config --exists shrike
+          pkg-config --modversion shrike
+          pkg-config --cflags shrike
+          pkg-config --libs shrike
+      - name: link a tiny consumer against the installed lib
+        run: |
+          export PKG_CONFIG_PATH="$PWD/staging/usr/lib/pkgconfig"
+          cat > /tmp/consumer.c <<'EOF'
+          #include <shrike/version.h>
+          #include <stdio.h>
+          int main(void) {
+              printf("%s %s\n", shrike_version_string(),
+                     SHRIKE_VERSION_STRING);
+              return 0;
+          }
+          EOF
+          cc /tmp/consumer.c $(pkg-config --cflags --libs shrike) -o /tmp/consumer
+          /tmp/consumer
+
   sanitizers:
     name: ASan + UBSan
     runs-on: ubuntu-24.04

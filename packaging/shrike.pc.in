@@ -1,0 +1,11 @@
+prefix=@PREFIX@
+exec_prefix=${prefix}
+libdir=@LIBDIR@
+includedir=@INCLUDEDIR@
+
+Name: shrike
+Description: ROP gadget scanner for ELF64 (x86-64 + AArch64)
+URL: https://github.com/bauratynov/shrike
+Version: @VERSION@
+Libs: -L${libdir} -lshrike
+Cflags: -I${includedir}
