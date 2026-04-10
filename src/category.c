@@ -5,9 +5,9 @@
  * rather than a guess. Downstream filters know what to do with OTHER.
  */
 
-#include "category.h"
-#include "arm64.h"
-#include "elf64.h"
+#include <shrike/category.h>
+#include <shrike/arm64.h>
+#include <shrike/elf64.h>
 
 #include <stdint.h>
 #include <string.h>

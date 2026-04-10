@@ -2,8 +2,8 @@
  * test_category.c — gadget classification unit tests.
  */
 
-#include "category.h"
-#include "elf64.h"
+#include <shrike/category.h>
+#include <shrike/elf64.h>
 
 #include <stdio.h>
 #include <string.h>

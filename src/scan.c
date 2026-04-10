@@ -14,10 +14,10 @@
  * either mode.
  */
 
-#include "scan.h"
-#include "xdec.h"
-#include "arm64.h"
-#include "elf64.h"
+#include <shrike/scan.h>
+#include <shrike/xdec.h>
+#include <shrike/arm64.h>
+#include <shrike/elf64.h>
 
 #include <string.h>
 

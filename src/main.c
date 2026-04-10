@@ -6,16 +6,17 @@
  * Dispatches on ELF machine type: x86-64 or aarch64.
  */
 
-#include "elf64.h"
-#include "scan.h"
-#include "format.h"
-#include "strset.h"
-#include "cet.h"
-#include "category.h"
-#include "regidx.h"
-#include "recipe.h"
-#include "sarif.h"
-#include "pivots.h"
+#include <shrike/elf64.h>
+#include <shrike/scan.h>
+#include <shrike/format.h>
+#include <shrike/strset.h>
+#include <shrike/cet.h>
+#include <shrike/category.h>
+#include <shrike/regidx.h>
+#include <shrike/recipe.h>
+#include <shrike/sarif.h>
+#include <shrike/pivots.h>
+#include <shrike/version.h>
 
 /* v0.13.0: file-scope pointer so emit_cb can reach the SARIF
  * emitter without changing the gadget_cb signature. */
@@ -276,6 +277,7 @@ static void usage(const char *prog)
 "                          starts_endbr, category for every gadget\n"
 "\n"
 "  -h, --help              this message\n"
+"  -V, --version           print version and exit\n"
 "\n"
 "Exit codes: 0 ok, 1 runtime error, 2 bad invocation.\n",
     prog);
@@ -330,6 +332,9 @@ int main(int argc, char **argv)
         const char *a = argv[i];
         if (!strcmp(a, "-h") || !strcmp(a, "--help")) {
             usage(argv[0]); return 0;
+        } else if (!strcmp(a, "-V") || !strcmp(a, "--version")) {
+            printf("shrike %s\n", shrike_version_string());
+            return 0;
         } else if (!strcmp(a, "--max-insn") && i + 1 < argc) {
             cfg.max_insn = atoi(argv[++i]);
         } else if (!strcmp(a, "--back") && i + 1 < argc) {

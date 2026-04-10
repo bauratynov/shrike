@@ -5,9 +5,9 @@
  * Scanning inspects. Keeps the binary dependency-free.
  */
 
-#include "sarif.h"
-#include "format.h"
-#include "elf64.h"
+#include <shrike/sarif.h>
+#include <shrike/format.h>
+#include <shrike/elf64.h>
 
 #include <inttypes.h>
 #include <stdint.h>

@@ -8,9 +8,9 @@
  * planned for v0.11+.
  */
 
-#include "regidx.h"
-#include "arm64.h"
-#include "elf64.h"
+#include <shrike/regidx.h>
+#include <shrike/arm64.h>
+#include <shrike/elf64.h>
 
 #include <inttypes.h>
 #include <stdint.h>

@@ -13,7 +13,7 @@
  * pretending to be a full disassembler.
  */
 
-#include "arm64.h"
+#include <shrike/arm64.h>
 
 #include <stdint.h>
 #include <stdio.h>

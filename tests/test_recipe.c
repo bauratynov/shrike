@@ -2,9 +2,9 @@
  * test_recipe.c — recipe parser + resolver unit tests.
  */
 
-#include "recipe.h"
-#include "regidx.h"
-#include "elf64.h"
+#include <shrike/recipe.h>
+#include <shrike/regidx.h>
+#include <shrike/elf64.h>
 
 #include <stdio.h>
 #include <string.h>

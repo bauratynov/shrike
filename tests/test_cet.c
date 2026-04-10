@@ -2,7 +2,7 @@
  * test_cet.c — CET classifier unit tests.
  */
 
-#include "cet.h"
+#include <shrike/cet.h>
 
 #include <stdio.h>
 #include <string.h>

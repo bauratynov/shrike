@@ -2,11 +2,11 @@
  * pivots.c — stack pivot analyser + atlas.
  */
 
-#include "pivots.h"
-#include "arm64.h"
-#include "elf64.h"
-#include "regidx.h"
-#include "format.h"
+#include <shrike/pivots.h>
+#include <shrike/arm64.h>
+#include <shrike/elf64.h>
+#include <shrike/regidx.h>
+#include <shrike/format.h>
 
 #include <inttypes.h>
 #include <stdint.h>

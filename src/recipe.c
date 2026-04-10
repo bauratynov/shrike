@@ -2,7 +2,7 @@
  * recipe.c — DSL parser + greedy chain resolver.
  */
 
-#include "recipe.h"
+#include <shrike/recipe.h>
 
 #include <ctype.h>
 #include <inttypes.h>

@@ -22,11 +22,11 @@
  * Everything else → "db 0x.., 0x.." fallback.
  */
 
-#include "format.h"
-#include "cet.h"
-#include "xdec.h"
-#include "arm64.h"
-#include "elf64.h"
+#include <shrike/format.h>
+#include <shrike/cet.h>
+#include <shrike/xdec.h>
+#include <shrike/arm64.h>
+#include <shrike/elf64.h>
 
 #include <inttypes.h>
 #include <stdarg.h>

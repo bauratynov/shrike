@@ -8,9 +8,9 @@
  * with a BTI landing pad", which is the analogous construct.
  */
 
-#include "cet.h"
-#include "elf64.h"
-#include "arm64.h"
+#include <shrike/cet.h>
+#include <shrike/elf64.h>
+#include <shrike/arm64.h>
 
 #include <stdint.h>
 

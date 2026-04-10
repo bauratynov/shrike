@@ -8,7 +8,7 @@
  * and without operand-size override.
  */
 
-#include "xdec.h"
+#include <shrike/xdec.h>
 
 #include <stdio.h>
 #include <stdint.h>

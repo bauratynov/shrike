@@ -4,7 +4,7 @@
  * returns a length in [1, 15] or rejects cleanly.
  */
 
-#include "xdec.h"
+#include <shrike/xdec.h>
 
 #include <stdint.h>
 #include <stddef.h>

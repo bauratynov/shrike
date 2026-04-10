@@ -5,7 +5,7 @@
  * independent of a specific toolchain.
  */
 
-#include "arm64.h"
+#include <shrike/arm64.h>
 
 #include <stdio.h>
 #include <string.h>

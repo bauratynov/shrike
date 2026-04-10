@@ -2,8 +2,8 @@
  * test_regidx.c — register-control index unit tests.
  */
 
-#include "regidx.h"
-#include "elf64.h"
+#include <shrike/regidx.h>
+#include <shrike/elf64.h>
 
 #include <stdio.h>
 #include <stdint.h>

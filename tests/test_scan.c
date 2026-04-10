@@ -6,8 +6,8 @@
  * callback records the emitted gadgets for inspection.
  */
 
-#include "scan.h"
-#include "format.h"
+#include <shrike/scan.h>
+#include <shrike/format.h>
 
 #include <stdio.h>
 #include <stdint.h>

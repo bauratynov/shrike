@@ -6,7 +6,7 @@
  * symbols.
  */
 
-#include "elf64.h"
+#include <shrike/elf64.h>
 
 #include <errno.h>
 #include <fcntl.h>

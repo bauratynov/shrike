@@ -13,7 +13,7 @@
  *   7. Sanity-check total length against the x86-64 15-byte cap.
  */
 
-#include "xdec.h"
+#include <shrike/xdec.h>
 
 #include <string.h>
 

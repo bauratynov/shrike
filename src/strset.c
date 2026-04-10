@@ -2,7 +2,7 @@
  * strset.c — open-addressed hash set of strings.
  */
 
-#include "strset.h"
+#include <shrike/strset.h>
 
 #include <stdint.h>
 #include <stdlib.h>
