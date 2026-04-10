@@ -37,16 +37,19 @@ main(void)
     CHECK(SHRIKE_MK_VERSION(1, 9, 9) < SHRIKE_MK_VERSION(2, 0, 0));
     CHECK(SHRIKE_MK_VERSION(0, 33, 0) < SHRIKE_MK_VERSION(1, 0, 0));
 
-    /* Compile-time comparison works. */
-#if SHRIKE_VERSION >= SHRIKE_MK_VERSION(1, 1, 0)
-    /* expected path */
-#else
-    CHECK(!"SHRIKE_VERSION comparison broken");
+    /* Compile-time comparison works — evaluates in the preprocessor,
+     * so the test fails at build time on regression, not at runtime. */
+#if !(SHRIKE_VERSION >= SHRIKE_MK_VERSION(1, 1, 0))
+#  error "SHRIKE_VERSION comparison broken"
 #endif
 
     /* String form is non-empty, matches MAJOR.MINOR.PATCH shape. */
     const char *s = shrike_version_string();
-    CHECK(s != NULL);
+    if (s == NULL) {
+        fprintf(stderr, "FAIL %s:%d  shrike_version_string() returned NULL\n",
+                __FILE__, __LINE__);
+        return 1;
+    }
     CHECK(strlen(s) >= 5);
 
     /* Every character is a digit or a dot. */

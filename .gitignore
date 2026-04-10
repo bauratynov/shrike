@@ -4,7 +4,8 @@
 *.so
 *.dll
 *.exe
-shrike
+# Anchor to repo root — was also matching include/shrike/ which hid version.h.
+/shrike
 tests/test_*
 !tests/test_*.c
 tests/fixtures/bin_*
