@@ -114,6 +114,8 @@ main(void)
     CHECK(e.nseg == 1);
     CHECK(e.machine == EM_X86_64);
     CHECK(e.is_dyn == 1);
+    CHECK(e.format == 1);
+    CHECK(e.pe_dll_chars == IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE);
     CHECK(e.entry == 0x140000000ull + 0x1000);
 
     if (e.nseg == 1) {

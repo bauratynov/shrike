@@ -61,8 +61,6 @@
 #define PE_OPT_DLLCHAR_PE32_OFF  70
 #define PE_OPT_DLLCHAR_PE32P_OFF 70
 
-#define IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE 0x0040
-
 /* IMAGE_SECTION_HEADER field offsets relative to the 40-byte record. */
 #define PE_SH_NAME_OFF        0
 #define PE_SH_VSIZE_OFF       8
@@ -151,8 +149,13 @@ static int parse(elf64_t *e)
      * at load time," which we surface as ET_DYN-equivalent. */
     if (opt_sz >= PE_OPT_DLLCHAR_PE32P_OFF + 2) {
         uint16_t dllchar = rd_u16(opt + PE_OPT_DLLCHAR_PE32P_OFF);
-        e->is_dyn = (dllchar & IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE) ? 1 : 0;
+        e->is_dyn        = (dllchar & IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE) ? 1 : 0;
+        e->pe_dll_chars  = dllchar;
     }
+
+    /* Mark the image as PE-sourced so the hardening audit knows to
+     * read pe_dll_chars instead of walking PT_GNU_PROPERTY. */
+    e->format = 1;
 
     /* Section table immediately follows the OptionalHeader. */
     uint64_t sect_off = opt_off + opt_sz;

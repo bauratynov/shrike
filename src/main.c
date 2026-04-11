@@ -643,8 +643,18 @@ loaded:
         }
         if (pivots_mode && pivots_machine == 0) pivots_machine = e.machine;
 
-        /* v0.19.0: CET / BTI posture — parse PT_GNU_PROPERTY */
-        if (cet_posture) {
+        /* v0.19.0: CET / BTI posture — parse PT_GNU_PROPERTY.
+         * v1.2.1: PE inputs read DllCharacteristics instead. */
+        if (cet_posture && e.format == 1) {
+            uint16_t d = e.pe_dll_chars;
+            fprintf(stdout, "# cet-posture %s (pe):", path);
+            fprintf(stdout,
+                " ASLR=%s CFG=%s DEP=%s HIGH_ENTROPY=%s\n",
+                (d & IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE)    ? "on" : "off",
+                (d & IMAGE_DLLCHARACTERISTICS_GUARD_CF)        ? "on" : "off",
+                (d & IMAGE_DLLCHARACTERISTICS_NX_COMPAT)       ? "on" : "off",
+                (d & IMAGE_DLLCHARACTERISTICS_HIGH_ENTROPY_VA) ? "on" : "off");
+        } else if (cet_posture) {
             int ibt = 0, shstk = 0, bti = 0, found = 0;
             for (size_t pi2 = 0; pi2 < e.phnum; pi2++) {
                 const Elf64_Phdr *ph = &e.phdr[pi2];

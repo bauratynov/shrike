@@ -3,6 +3,28 @@
 All notable changes to `shrike` are listed here. Project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] — 2026-04-18
+
+**PE hardening audit.** `--cet-posture` now works on PE inputs
+by reading `OptionalHeader.DllCharacteristics`. Closes the
+loop on Stage II Sprint 2.
+
+### Changes
+- `elf64_t` grows `int format` (0 = ELF64, 1 = PE/COFF) and
+  `uint16_t pe_dll_chars` — the raw DllCharacteristics bitfield
+  from the OptionalHeader. Populated by `pe_load`; stays zero
+  for ELF inputs.
+- `<shrike/pe.h>` exports the DllCharacteristics constant names
+  (`DYNAMIC_BASE`, `GUARD_CF`, `NX_COMPAT`, `HIGH_ENTROPY_VA`,
+  `NO_SEH`) so downstream code doesn't hex-code-compare.
+- `shrike --cet-posture foo.dll` now prints
+  `# cet-posture foo.dll (pe): ASLR=on CFG=on DEP=on HIGH_ENTROPY=on`
+  in one line. ELF inputs keep the existing GNU_PROPERTY-walker
+  output unchanged.
+- `test_pe.c` exercises the new fields.
+
+Version bump 1.2.0 → 1.2.1 (additive, no breaking change).
+
 ## [1.2.0] — 2026-04-18
 
 **Native PE/COFF loader.** Sprint 5 — first sprint of Stage II

@@ -38,6 +38,15 @@ extern "C" {
 #define IMAGE_SCN_MEM_EXECUTE 0x20000000u
 #define IMAGE_SCN_CNT_CODE    0x00000020u
 
+/* DllCharacteristics hardening bits (IMAGE_OPTIONAL_HEADER).
+ * Everything `--cet-posture` reports for a PE input comes from
+ * this bitfield; no second parsing pass needed. */
+#define IMAGE_DLLCHARACTERISTICS_HIGH_ENTROPY_VA    0x0020u
+#define IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE       0x0040u
+#define IMAGE_DLLCHARACTERISTICS_NX_COMPAT          0x0100u
+#define IMAGE_DLLCHARACTERISTICS_NO_SEH             0x0400u
+#define IMAGE_DLLCHARACTERISTICS_GUARD_CF           0x4000u
+
 /* mmap + parse + fill e->segs[] with every executable section.
  * Returns 0 on success, -1 + errno on failure. On success the
  * caller must elf64_close(e) as with the ELF path. */

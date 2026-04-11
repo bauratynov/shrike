@@ -92,6 +92,15 @@ typedef struct {
     uint64_t          entry;         /* e_entry, for reporting */
     int               is_dyn;        /* ET_DYN vs ET_EXEC */
     uint16_t          machine;       /* EM_X86_64 or EM_AARCH64 */
+
+    /* v1.2.0 / v1.2.1: source-format discriminator + PE metadata.
+     * ELF inputs leave `format = 0` and `pe_dll_chars = 0`; PE
+     * inputs set `format = 1` and populate pe_dll_chars from
+     * IMAGE_OPTIONAL_HEADER.DllCharacteristics so the hardening
+     * audit (`--cet-posture` et al.) can report CF Guard / DEP /
+     * ASLR / HIGH_ENTROPY_VA without a second parse pass. */
+    int               format;
+    uint16_t          pe_dll_chars;
 } elf64_t;
 
 /* mmap + parse + fill the segs[] array with executable PT_LOAD entries.
