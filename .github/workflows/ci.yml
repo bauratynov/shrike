@@ -53,26 +53,28 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - name: install into staging prefix
+      - name: DESTDIR staging install (verifies layout only)
         run: |
-          make install PREFIX=/usr DESTDIR="$PWD/staging"
-      - name: verify layout
+          make install PREFIX=/usr DESTDIR="$PWD/destdir"
+          test -x destdir/usr/bin/shrike
+          test -f destdir/usr/lib/libshrike.a
+          test -f destdir/usr/lib/pkgconfig/shrike.pc
+          test -f destdir/usr/include/shrike/version.h
+          test -f destdir/usr/include/shrike/scan.h
+      - name: PREFIX install into a real path (for pkg-config resolution)
         run: |
-          test -x staging/usr/bin/shrike
-          test -f staging/usr/lib/libshrike.a
-          test -f staging/usr/lib/pkgconfig/shrike.pc
-          test -f staging/usr/include/shrike/version.h
-          test -f staging/usr/include/shrike/scan.h
+          make clean
+          make install PREFIX="$PWD/prefix"
       - name: pkg-config resolves
         run: |
-          export PKG_CONFIG_PATH="$PWD/staging/usr/lib/pkgconfig"
+          export PKG_CONFIG_PATH="$PWD/prefix/lib/pkgconfig"
           pkg-config --exists shrike
           pkg-config --modversion shrike
           pkg-config --cflags shrike
           pkg-config --libs shrike
       - name: link a tiny consumer against the installed lib
         run: |
-          export PKG_CONFIG_PATH="$PWD/staging/usr/lib/pkgconfig"
+          export PKG_CONFIG_PATH="$PWD/prefix/lib/pkgconfig"
           cat > /tmp/consumer.c <<'EOF'
           #include <shrike/version.h>
           #include <stdio.h>
