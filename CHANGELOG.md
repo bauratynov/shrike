@@ -3,6 +3,45 @@
 All notable changes to `shrike` are listed here. Project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.3] — 2026-04-18
+
+**Shared library.** `libshrike.so.1.1.3` ships alongside
+`libshrike.a`. Downstream consumers linking via pkg-config now
+get the dynamic version by default — ld.so finds it through the
+canonical three-level symlink chain (`libshrike.so` →
+`libshrike.so.1` → `libshrike.so.1.1.3`).
+
+### Changes
+- Makefile builds a parallel PIC object tree (`src/*.pic.o`)
+  alongside the non-PIC objects, then links them into
+  `libshrike.so.$(SHRIKE_VERSION)` with
+  `-Wl,-soname,libshrike.so.1`. Bumping the SOMAJOR tracks
+  `SHRIKE_VERSION_MAJOR`, so 2.0.0 will bump the soname and
+  downstream rebuilds will be required — exactly what a major
+  version break means.
+- Install drops all three files into `$(LIBDIR)`:
+  - `libshrike.so.1.1.3` — the actual shared object.
+  - `libshrike.so.1` — soname symlink used by ld.so at runtime.
+  - `libshrike.so` — unversioned symlink used by `-lshrike` at
+    link time.
+- `make uninstall` removes the whole set.
+- The CLI binary still links statically against `libshrike.a`,
+  so the "drop this on any Linux host" story survives. Only the
+  library consumer story is dynamic.
+- Dockerfile pins `make shrike` (not `make`), because building
+  the .so with `-static` CFLAGS in the same compile fails (you
+  can't statically link a shared object).
+- CI install-smoke grows: verifies the three-level symlink chain,
+  reads `SONAME` via `readelf -d`, then compiles and runs a
+  consumer against the .so with `-Wl,-rpath` and confirms `ldd`
+  shows the dynamic dependency.
+
+### Stage I of the V2 roadmap — complete
+Library shape sprints (v1.1.0 → v1.1.3) are done. Static
+library, versioned headers, pkg-config, shared library. Stage II
+(native platform loaders for PE, Mach-O, RISC-V) starts at
+v1.2.0.
+
 ## [1.1.2] — 2026-04-18
 
 **pkg-config + proper `make install`.** Installing shrike now

@@ -61,6 +61,16 @@ jobs:
           test -f destdir/usr/lib/pkgconfig/shrike.pc
           test -f destdir/usr/include/shrike/version.h
           test -f destdir/usr/include/shrike/scan.h
+          # Shared library + soname + linker symlink all present.
+          test -f destdir/usr/lib/libshrike.so
+          test -L destdir/usr/lib/libshrike.so
+          test -L destdir/usr/lib/libshrike.so.1
+          ls destdir/usr/lib/libshrike.so.1.1.3
+      - name: soname embedded in the .so
+        run: |
+          # readelf confirms the dynamic linker sees libshrike.so.1.
+          readelf -d destdir/usr/lib/libshrike.so.1.1.3 | \
+              grep -E 'SONAME.*libshrike\.so\.1'
       - name: PREFIX install into a real path (for pkg-config resolution)
         run: |
           make clean
@@ -72,7 +82,7 @@ jobs:
           pkg-config --modversion shrike
           pkg-config --cflags shrike
           pkg-config --libs shrike
-      - name: link a tiny consumer against the installed lib
+      - name: link a tiny consumer dynamically against libshrike.so
         run: |
           export PKG_CONFIG_PATH="$PWD/prefix/lib/pkgconfig"
           cat > /tmp/consumer.c <<'EOF'
@@ -84,8 +94,14 @@ jobs:
               return 0;
           }
           EOF
-          cc /tmp/consumer.c $(pkg-config --cflags --libs shrike) -o /tmp/consumer
+          # pkg-config --libs reports "-L<libdir> -lshrike"; ld.so
+          # picks libshrike.so → libshrike.so.1 at load time.
+          cc /tmp/consumer.c $(pkg-config --cflags --libs shrike) \
+             -Wl,-rpath,"$PWD/prefix/lib" \
+             -o /tmp/consumer
           /tmp/consumer
+          # Confirm we actually dynamically linked, not statically.
+          ldd /tmp/consumer | grep libshrike.so.1
 
   sanitizers:
     name: ASan + UBSan
