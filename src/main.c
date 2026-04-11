@@ -17,6 +17,7 @@
 #include <shrike/sarif.h>
 #include <shrike/pivots.h>
 #include <shrike/version.h>
+#include <shrike/pe.h>
 
 /* v0.13.0: file-scope pointer so emit_cb can reach the SARIF
  * emitter without changing the gadget_cb signature. */
@@ -439,7 +440,9 @@ int main(int argc, char **argv)
 
         for (size_t pi = 0; pi < 2; pi++) {
             elf64_t e;
-            if (elf64_load(paths[pi], &e) < 0) {
+            int drc = elf64_load(paths[pi], &e);
+            if (drc == -2) drc = pe_load(paths[pi], &e);
+            if (drc < 0) {
                 fprintf(stderr, "shrike: %s: %s\n",
                         paths[pi], strerror(errno));
                 strset_free(&set_old);
@@ -598,13 +601,18 @@ int main(int argc, char **argv)
         const char *path = paths[pi];
         elf64_t e;
         int lrc = elf64_load(path, &e);
+        if (lrc == -2) {
+            /* v1.2.0: PE/COFF gets a native loader. Retry via pe_load
+             * before falling through to the "here's how to use
+             * objcopy" message. */
+            lrc = pe_load(path, &e);
+            if (lrc == 0) goto loaded;
+        }
         if (lrc < 0) {
             if (lrc == -2) {
                 fprintf(stderr,
-                    "shrike: %s: PE/COFF detected. Extract the .text "
-                    "with 'objcopy -O binary --only-section=.text' and "
-                    "pass --raw --raw-arch x86_64 --raw-base 0x<vaddr>.\n",
-                    path);
+                    "shrike: %s: PE/COFF loader failed: %s\n",
+                    path, strerror(errno));
             } else if (lrc == -3) {
                 fprintf(stderr,
                     "shrike: %s: Mach-O detected. Extract __TEXT,__text "
@@ -624,6 +632,7 @@ int main(int argc, char **argv)
             had_error = 1;
             continue;
         }
+loaded:
         pc.src = path;
         const char *arch = (e.machine == EM_AARCH64) ? "aarch64" : "x86_64";
 

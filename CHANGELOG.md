@@ -3,6 +3,46 @@
 All notable changes to `shrike` are listed here. Project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] — 2026-04-18
+
+**Native PE/COFF loader.** Sprint 5 — first sprint of Stage II
+(native platform loaders). Shrike can now scan Windows
+`.exe` / `.dll` binaries directly. The v1.x `objcopy` workaround
+still works but is no longer the recommended path.
+
+### Changes
+- `include/shrike/pe.h` + `src/pe.c` — bounded PE parser. Handles
+  DOS stub → NT headers → FileHeader → OptionalHeader (PE32 and
+  PE32+) → section table. Every pointer advance is size-checked
+  before deref.
+- Executable-section gate: `IMAGE_SCN_MEM_EXECUTE` alone (not
+  `CNT_CODE`, which obfuscators and thunks routinely leave off).
+- PE machine codes map to ELF `EM_*` values so the scanner,
+  register-control index, recipe composer, CET classifier, and
+  SARIF emitter all work unchanged on PE inputs.
+- `ImageBase` + `VirtualAddress` is reported as the gadget VA —
+  that's what IDA / WinDbg / Binja show. `VirtualSize` is clamped
+  to `SizeOfRawData` so we don't scan zero-fill tails.
+- ASLR surfaced as `is_dyn` (via
+  `IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE` in `DllCharacteristics`),
+  consistent with how we report `ET_DYN` for PIE ELFs.
+- `main.c` falls through from `elf64_load -> -2 (PE detected)` to
+  `pe_load` transparently. No flag flip required — `shrike foo.dll`
+  just works.
+- `tests/test_pe.c` synthesizes a minimal PE64 image in-memory
+  and exercises the happy path + truncated-buffer + bad-DOS-magic
+  fail-closed paths.
+
+### Scope deliberately deferred
+- Debug Directory → CET_COMPAT bit (v1.2.1 companion patch).
+- PE32 (32-bit i386) — the decoder is x86-64 only, 32-bit
+  x86 support is tracked in V3_ROADMAP.
+- .NET / CLI images, delay-load imports, overlays, packed
+  sections — all detected but unhandled, left to later sprints.
+- PDB symbol enrichment is in V3_ROADMAP Stage VIII.
+
+Version bump 1.1.3 → 1.2.0 (minor — first new loader since 1.0).
+
 ## [1.1.3] — 2026-04-18
 
 **Shared library.** `libshrike.so.1.1.3` ships alongside
