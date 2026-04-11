@@ -3,6 +3,40 @@
 All notable changes to `shrike` are listed here. Project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] — 2026-04-18
+
+**Native Mach-O 64 loader.** Sprint 7 — opens Stage II's third
+platform slot. Shrike can now scan Darwin `.bin` / `.dylib` /
+`.bundle` thin binaries for x86-64 and arm64 without the
+`otool -s __TEXT __text | xxd -r` workaround.
+
+### Changes
+- `include/shrike/macho.h` + `src/macho.c` — bounded loader.
+  Walks `mach_header_64` then the `ncmds` load commands. Picks
+  up every `LC_SEGMENT_64` whose `initprot` includes
+  `VM_PROT_EXECUTE` and feeds its file-resident bytes to the
+  scanner.
+- Supported filetypes: `MH_EXECUTE` / `MH_DYLIB` / `MH_BUNDLE`.
+  Everything else (object files, kext, core dumps) is refused.
+- CPU types `CPU_TYPE_X86_64` and `CPU_TYPE_ARM64` both route
+  into the existing x86-64 / AArch64 scanners. arm64e PAC bit
+  handling is deferred — shrike scans bytes, so PAC'd pointer
+  instructions are decoded as the underlying opcodes.
+- `elf64_t.format` grows a third value: 2 = Mach-O. PE remains
+  1, ELF remains 0.
+- `main.c` falls through `elf64_load -> -3 (Mach-O detected)` to
+  `macho_load` transparently; `shrike /usr/lib/dyld` just works.
+- `tests/test_macho.c` synthesizes a minimal Mach-O 64 image
+  in memory and exercises the happy path + fat/m32/bad-magic
+  fail-closed paths.
+
+### Scope deferred to v1.3.1
+Fat / universal binaries (`FAT_MAGIC` / `FAT_CIGAM`) are detected
+but refused. Fat dispatch — pick the right slice or emit a
+warning if `--mach-o-arch` is unspecified — is the next sprint.
+
+Version bump 1.2.1 → 1.3.0 (minor — new loader).
+
 ## [1.2.1] — 2026-04-18
 
 **PE hardening audit.** `--cet-posture` now works on PE inputs
