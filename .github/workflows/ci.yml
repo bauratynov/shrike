@@ -65,12 +65,14 @@ jobs:
           test -f destdir/usr/lib/libshrike.so
           test -L destdir/usr/lib/libshrike.so
           test -L destdir/usr/lib/libshrike.so.1
-          ls destdir/usr/lib/libshrike.so.1.1.3
+          # Real .so file — version-agnostic glob so future bumps
+          # don't need a CI edit.
+          ls destdir/usr/lib/libshrike.so.[0-9]*.[0-9]*.[0-9]*
       - name: soname embedded in the .so
         run: |
           # readelf confirms the dynamic linker sees libshrike.so.1.
-          readelf -d destdir/usr/lib/libshrike.so.1.1.3 | \
-              grep -E 'SONAME.*libshrike\.so\.1'
+          so_real=$(ls destdir/usr/lib/libshrike.so.[0-9]*.[0-9]*.[0-9]*)
+          readelf -d "$so_real" | grep -E 'SONAME.*libshrike\.so\.1'
       - name: PREFIX install into a real path (for pkg-config resolution)
         run: |
           make clean

@@ -51,13 +51,14 @@ put_u64(uint8_t *p, uint64_t v)
 int
 main(void)
 {
-    /* Layout:
-     *   0x000  DOS header (64 bytes, e_lfanew = 0x80)
-     *   0x080  NT signature "PE\0\0"
-     *   0x084  IMAGE_FILE_HEADER (20 bytes)
-     *   0x098  IMAGE_OPTIONAL_HEADER64 (112 bytes, plus padding)
-     *   0x200  IMAGE_SECTION_HEADER[0] — .text (executable)
-     *   0x228  IMAGE_SECTION_HEADER[1] — .data (non-executable)
+    /* Layout (spec-accurate offsets — no padding between opt header
+     * and section table):
+     *   0x000  DOS header (64 bytes; e_lfanew = 0x80)
+     *   0x080  NT signature "PE\0\0"       (4 bytes)
+     *   0x084  IMAGE_FILE_HEADER           (20 bytes)
+     *   0x098  IMAGE_OPTIONAL_HEADER64     (112 bytes)
+     *   0x108  IMAGE_SECTION_HEADER[0] — .text (executable)
+     *   0x130  IMAGE_SECTION_HEADER[1] — .data (non-executable)
      *   0x400  .text contents (16 bytes of RET-family bytes)
      *   0x600  .data contents (padding)
      */
@@ -85,8 +86,9 @@ main(void)
     put_u64(opt + 24, 0x140000000ull);
     put_u16(opt + 70, 0x0040);  /* IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE */
 
-    /* Section 0: .text (executable) */
-    uint8_t *s0 = img + 0x200;
+    /* Section table starts immediately after the optional header at
+     * 0x98 + 112 = 0x108. The parser computes this offset exactly. */
+    uint8_t *s0 = img + 0x108;
     memcpy(s0, ".text", 5);
     put_u32(s0 + 8,  0x10);           /* VirtualSize */
     put_u32(s0 + 12, 0x1000);         /* VirtualAddress (RVA) */
@@ -95,7 +97,7 @@ main(void)
     put_u32(s0 + 36, 0x60000020u);    /* MEM_EXECUTE | MEM_READ | CNT_CODE */
 
     /* Section 1: .data (not executable, must be skipped) */
-    uint8_t *s1 = img + 0x228;
+    uint8_t *s1 = img + 0x130;
     memcpy(s1, ".data", 5);
     put_u32(s1 + 8,  0x10);
     put_u32(s1 + 12, 0x2000);

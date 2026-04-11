@@ -50,9 +50,9 @@ PCDIR      ?= $(LIBDIR)/pkgconfig
 # Derive the version string from the public header so there's a
 # single source of truth. The shell runs once at parse time.
 SHRIKE_VERSION := $(shell awk '\
-    /^\#define SHRIKE_VERSION_MAJOR/ {maj=$$3} \
-    /^\#define SHRIKE_VERSION_MINOR/ {min=$$3} \
-    /^\#define SHRIKE_VERSION_PATCH/ {pat=$$3} \
+    /^#define SHRIKE_VERSION_MAJOR/ {maj=$$3} \
+    /^#define SHRIKE_VERSION_MINOR/ {min=$$3} \
+    /^#define SHRIKE_VERSION_PATCH/ {pat=$$3} \
     END {print maj"."min"."pat}' include/shrike/version.h)
 
 # Library sources: everything except the CLI entry point. This is the
@@ -69,7 +69,7 @@ LIB         := libshrike.a
 # points at libshrike.so.<SHRIKE_VERSION> (real file),
 # and libshrike.so (unversioned, for the linker) points at the
 # soname. This matches what liblzma / libsodium / libssh2 do.
-SOMAJOR     := $(shell awk '/^\#define SHRIKE_VERSION_MAJOR/ {print $$3}' include/shrike/version.h)
+SOMAJOR     := $(shell awk '/^#define SHRIKE_VERSION_MAJOR/ {print $$3}' include/shrike/version.h)
 LIB_SO_REAL := libshrike.so.$(SHRIKE_VERSION)
 LIB_SO_NAME := libshrike.so.$(SOMAJOR)
 LIB_SO_LINK := libshrike.so
