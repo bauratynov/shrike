@@ -34,6 +34,16 @@
   #include <sys/mman.h>
 #endif
 
+#include <stdio.h>
+
+/* Preferred slice for fat/universal binaries. Set by
+ * macho_set_preferred_arch(); NULL means "no preference — take
+ * the first slice and warn". Module-level state is ugly but
+ * matches how sarif_current / pivot_atlas_current thread
+ * emitter context through gadget_cb_t callbacks elsewhere in
+ * shrike without changing stable API shapes. */
+static uint32_t g_pref_cputype = 0;
+
 #define MH64_HDR_SIZE  32
 #define LC_HDR_SIZE    8
 #define SEG64_CMD_SIZE 72
@@ -65,6 +75,16 @@ static uint32_t rd_u32(const uint8_t *p)
     return (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
            ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
 }
+
+/* fat_header / fat_arch are stored big-endian regardless of host.
+ * Everything else in a Mach-O lives in native byte order — but
+ * fat is special, for compatibility with toolchains that need to
+ * read multi-arch containers without knowing the inner arch. */
+static uint32_t rd_be_u32(const uint8_t *p)
+{
+    return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) |
+           ((uint32_t)p[2] << 8)  |  (uint32_t)p[3];
+}
 static uint64_t rd_u64(const uint8_t *p)
 {
     return (uint64_t)rd_u32(p) | ((uint64_t)rd_u32(p + 4) << 32);
@@ -73,6 +93,59 @@ static uint64_t rd_u64(const uint8_t *p)
 static int in_bounds(const elf64_t *e, uint64_t off, uint64_t len)
 {
     return off <= e->size && len <= e->size && off + len <= e->size;
+}
+
+static int parse(elf64_t *e);
+
+/* Resolve a fat/universal image to a single slice and re-point
+ * e->map / e->size at it before calling into the thin parser.
+ * Ownership of the outer mmap stays on e->owns — the inner slice
+ * is a view into the same mapping. */
+static int
+parse_fat(elf64_t *e, uint32_t magic)
+{
+    /* fat_header: magic(4 BE) + nfat_arch(4 BE). */
+    if (e->size < 8) { errno = EINVAL; return -1; }
+    uint32_t nfat = rd_be_u32(e->map + 4);
+    if (nfat == 0 || nfat > 32) { errno = EINVAL; return -1; }
+    if (e->size < 8 + (uint64_t)nfat * 20) { errno = EINVAL; return -1; }
+    /* Use `magic` to suppress -Wunused-parameter; also validates
+     * the byte-order expectation — FAT_CIGAM would mean a
+     * host-endian fat_header, which Apple tooling never emits. */
+    if (magic != FAT_MAGIC) { errno = ENOTSUP; return -1; }
+
+    /* First pass: find the slice whose cputype matches the hint. */
+    const uint8_t *archs = e->map + 8;
+    uint32_t pick_idx = UINT32_MAX;
+    for (uint32_t i = 0; i < nfat; i++) {
+        uint32_t ct = rd_be_u32(archs + i * 20 + 0);
+        if (g_pref_cputype && ct == g_pref_cputype) {
+            pick_idx = i; break;
+        }
+    }
+    /* No hint or no match → first slice wins, emit a warning so
+     * the user notices the ambiguity. `lipo -thin <arch>` is how
+     * they'd get a deterministic single-arch input. */
+    if (pick_idx == UINT32_MAX) {
+        pick_idx = 0;
+        if (!g_pref_cputype) {
+            fprintf(stderr,
+                "shrike: Mach-O universal image — no --mach-o-arch set, "
+                "scanning first slice (of %u). Pass --mach-o-arch "
+                "<x86_64|arm64> to pick deterministically.\n",
+                (unsigned)nfat);
+        }
+    }
+
+    uint32_t off  = rd_be_u32(archs + pick_idx * 20 + 8);
+    uint32_t size = rd_be_u32(archs + pick_idx * 20 + 12);
+    if (off == 0 || size == 0)             { errno = EINVAL; return -1; }
+    if (!in_bounds(e, off, size))          { errno = EINVAL; return -1; }
+
+    /* Rewrite e->map/size to point at the slice. Parse recurses. */
+    e->map  = e->map + off;
+    e->size = size;
+    return parse(e);
 }
 
 static int parse(elf64_t *e)
@@ -84,10 +157,10 @@ static int parse(elf64_t *e)
         /* 32-bit Mach-O: detected, unsupported. */
         errno = ENOTSUP; return -1;
     }
-    if (magic == FAT_MAGIC || magic == FAT_CIGAM) {
-        /* Universal binary: main.c returns its own helpful message;
-         * macho_load just refuses. v1.3.1 will pick a slice here. */
-        errno = ENOTSUP; return -1;
+    /* Fat magic is big-endian-on-disk, so read it either way. */
+    uint32_t be_magic = rd_be_u32(e->map);
+    if (be_magic == FAT_MAGIC || be_magic == FAT_CIGAM) {
+        return parse_fat(e, be_magic);
     }
     if (magic != MH_MAGIC_64) { errno = EINVAL; return -1; }
 
@@ -169,6 +242,16 @@ next_lc:
 
     if (e->nseg == 0) { errno = ENOEXEC; return -1; }
     return 0;
+}
+
+void
+macho_set_preferred_arch(const char *name)
+{
+    if (name == NULL)                         g_pref_cputype = 0;
+    else if (!strcmp(name, "x86_64"))         g_pref_cputype = CPU_TYPE_X86_64;
+    else if (!strcmp(name, "arm64") ||
+             !strcmp(name, "aarch64"))        g_pref_cputype = CPU_TYPE_ARM64;
+    else                                      g_pref_cputype = 0;
 }
 
 int

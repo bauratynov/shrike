@@ -63,12 +63,21 @@ extern "C" {
 
 /* mmap + parse + fill e->segs[] with every executable segment.
  * Returns 0 on success, -1 + errno on failure. On success the
- * caller must elf64_close(e). */
+ * caller must elf64_close(e). Universal (fat) dispatch is on for
+ * both flavours of fat magic — see macho_set_preferred_arch(). */
 int  macho_load(const char *path, elf64_t *e);
 
 /* Parse an already-resident buffer. Caller guarantees `buf`
  * outlives the elf64_t. Used by unit tests. */
 int  macho_load_buffer(const uint8_t *buf, size_t size, elf64_t *e);
+
+/* Hint which slice to pick out of a fat/universal binary. Pass
+ * "x86_64" or "arm64"; NULL clears the hint. If a fat binary is
+ * encountered and no hint was set, macho_load emits a single
+ * stderr warning naming the slice it chose and then picks the
+ * first one (matching `lipo -info` order). Idempotent; safe to
+ * call before every load. */
+void macho_set_preferred_arch(const char *name);
 
 #ifdef __cplusplus
 }

@@ -392,6 +392,8 @@ int main(int argc, char **argv)
         } else if (!strcmp(a, "--cdx-props"))                { cdx_props = 1;
         } else if (!strcmp(a, "--raw"))                      { raw_mode = 1;
         } else if (!strcmp(a, "--raw-arch") && i + 1 < argc) { raw_arch = argv[++i];
+        } else if (!strcmp(a, "--mach-o-arch") && i + 1 < argc) {
+            macho_set_preferred_arch(argv[++i]);
         } else if (!strcmp(a, "--raw-base") && i + 1 < argc) {
             raw_base = strtoull(argv[++i], NULL, 0);
         } else if ((!strcmp(a, "--format") || !strcmp(a, "-p"))

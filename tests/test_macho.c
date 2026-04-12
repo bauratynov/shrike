@@ -117,11 +117,68 @@ main(void)
         CHECK((s->flags & PF_X) != 0);
     }
 
-    /* Fat/universal magic must be refused (no v1.3.1 yet). */
-    uint8_t fat[8];
-    put_u32(fat + 0, 0xcafebabeu);
-    put_u32(fat + 4, 0);
-    CHECK(macho_load_buffer(fat, sizeof fat, &e) < 0);
+    /* v1.3.1: fat/universal with no architectures is malformed. */
+    uint8_t fat_empty[8];
+    fat_empty[0] = 0xca; fat_empty[1] = 0xfe;
+    fat_empty[2] = 0xba; fat_empty[3] = 0xbe;
+    fat_empty[4] = 0; fat_empty[5] = 0; fat_empty[6] = 0; fat_empty[7] = 0;
+    CHECK(macho_load_buffer(fat_empty, sizeof fat_empty, &e) < 0);
+
+    /* v1.3.1: fat with one arm64 slice pointing at the original
+     * thin image's payload area. The parser should descend into
+     * the slice and find the __TEXT segment. */
+    uint8_t fat_img[0x1000];
+    memset(fat_img, 0, sizeof fat_img);
+    /* fat_header: FAT_MAGIC (BE) + nfat_arch=1 (BE) */
+    fat_img[0] = 0xca; fat_img[1] = 0xfe;
+    fat_img[2] = 0xba; fat_img[3] = 0xbe;
+    fat_img[4] = 0; fat_img[5] = 0; fat_img[6] = 0; fat_img[7] = 1;
+    /* fat_arch[0]: cputype=ARM64, cpusubtype=0, offset=0x400, size=0x800 */
+    fat_img[8]  = 0x01; fat_img[9]  = 0x00;
+    fat_img[10] = 0x00; fat_img[11] = 0x0c;  /* cputype (BE) = 0x0100000c */
+    /* cpusubtype (BE) */
+    fat_img[12] = 0; fat_img[13] = 0; fat_img[14] = 0; fat_img[15] = 0;
+    /* offset (BE) = 0x400 */
+    fat_img[16] = 0; fat_img[17] = 0; fat_img[18] = 0x04; fat_img[19] = 0;
+    /* size (BE) = 0x800 */
+    fat_img[20] = 0; fat_img[21] = 0; fat_img[22] = 0x08; fat_img[23] = 0;
+    /* align (BE) = 12 */
+    fat_img[24] = 0; fat_img[25] = 0; fat_img[26] = 0; fat_img[27] = 12;
+    /* Copy the whole thin image starting at offset 0x400 — this
+     * is enough to cover mach_header_64 + 3 LCs + the __TEXT
+     * payload, since our img is 0x800 bytes total. */
+    memcpy(fat_img + 0x400, img, sizeof img);
+    /* Re-write the __TEXT segment's fileoff to be relative to
+     * the slice start (0x400 = payload start in thin). The
+     * thin image already has fileoff=0x400 pointing INTO itself,
+     * so the slice-relative fileoff is 0x400. macho_load sees
+     * the slice as its own buffer, so this already works. */
+
+    /* No preference: picks slice 0, stderr warns, still succeeds. */
+    macho_set_preferred_arch(NULL);
+    elf64_t fe;
+    int frc = macho_load_buffer(fat_img, sizeof fat_img, &fe);
+    CHECK(frc == 0);
+    CHECK(fe.machine == EM_AARCH64);
+    CHECK(fe.nseg == 1);
+
+    /* Preference matches the slice we put in → no warning. */
+    macho_set_preferred_arch("arm64");
+    elf64_t fe2;
+    frc = macho_load_buffer(fat_img, sizeof fat_img, &fe2);
+    CHECK(frc == 0);
+    CHECK(fe2.machine == EM_AARCH64);
+
+    /* Preference that doesn't match → first slice wins with a
+     * warning (same behaviour as no-hint path). */
+    macho_set_preferred_arch("x86_64");
+    elf64_t fe3;
+    frc = macho_load_buffer(fat_img, sizeof fat_img, &fe3);
+    CHECK(frc == 0);
+    CHECK(fe3.machine == EM_AARCH64);  /* the only slice */
+
+    /* Reset state to avoid bleed between parallel tests. */
+    macho_set_preferred_arch(NULL);
 
     /* 32-bit Mach-O must be refused. */
     uint8_t m32[32];

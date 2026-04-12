@@ -3,6 +3,37 @@
 All notable changes to `shrike` are listed here. Project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.1] — 2026-04-18
+
+**Mach-O universal binary dispatch.** Fat/universal binaries
+(`FAT_MAGIC`, produced by `lipo`) are now resolved to a
+single arch slice before the thin parser runs. Closes Stage II's
+Mach-O work.
+
+### Changes
+- `--mach-o-arch x86_64|arm64` CLI flag picks the slice.
+  Accepted aliases: `arm64` / `aarch64`.
+- If the flag is not passed on a fat input, shrike scans the
+  first slice and emits one stderr warning naming the choice
+  (`lipo -thin <arch>` is the deterministic alternative).
+- `macho_set_preferred_arch()` is the library-side API; it
+  stays sticky across loads like the existing SARIF emitter
+  context handle pattern.
+- `parse_fat()` walks the 20-byte `fat_arch` records, validates
+  slice offset/size against the outer mapping, then recurses
+  into `parse()` with `e->map`/`e->size` re-pointed at the
+  slice bytes.
+- All fat-header fields are read big-endian regardless of host;
+  only the inner thin Mach-O is native little-endian. The
+  `FAT_CIGAM` variant is refused on purpose — Apple's tools
+  never emit it.
+- `test_macho.c` grows a fat-image synthesizer with arm64 in
+  the only slot; exercises no-hint + matching-hint + wrong-hint
+  behaviour and resets module state afterward.
+
+Version bump 1.3.0 → 1.3.1 (additive; new flag + transparent
+fat handling on existing `shrike foo.dylib` invocations).
+
 ## [1.3.0] — 2026-04-18
 
 **Native Mach-O 64 loader.** Sprint 7 — opens Stage II's third
