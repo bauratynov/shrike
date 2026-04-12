@@ -124,18 +124,21 @@ main(void)
     fat_empty[4] = 0; fat_empty[5] = 0; fat_empty[6] = 0; fat_empty[7] = 0;
     CHECK(macho_load_buffer(fat_empty, sizeof fat_empty, &e) < 0);
 
-    /* v1.3.1: fat with one arm64 slice pointing at the original
-     * thin image's payload area. The parser should descend into
-     * the slice and find the __TEXT segment. */
+    /* v1.3.1: fat with one x86_64 slice pointing at the original
+     * thin image's payload area. We use x86_64 here because the
+     * thin `img` above was assembled with cputype = x86_64 —
+     * fat_arch.cputype and the inner mach_header.cputype must
+     * agree or the file is malformed. The parser reads the inner
+     * header, so its value wins. */
     uint8_t fat_img[0x1000];
     memset(fat_img, 0, sizeof fat_img);
     /* fat_header: FAT_MAGIC (BE) + nfat_arch=1 (BE) */
     fat_img[0] = 0xca; fat_img[1] = 0xfe;
     fat_img[2] = 0xba; fat_img[3] = 0xbe;
     fat_img[4] = 0; fat_img[5] = 0; fat_img[6] = 0; fat_img[7] = 1;
-    /* fat_arch[0]: cputype=ARM64, cpusubtype=0, offset=0x400, size=0x800 */
+    /* fat_arch[0]: cputype=X86_64, cpusubtype=0, offset=0x400, size=0x800 */
     fat_img[8]  = 0x01; fat_img[9]  = 0x00;
-    fat_img[10] = 0x00; fat_img[11] = 0x0c;  /* cputype (BE) = 0x0100000c */
+    fat_img[10] = 0x00; fat_img[11] = 0x07;  /* cputype (BE) = 0x01000007 */
     /* cpusubtype (BE) */
     fat_img[12] = 0; fat_img[13] = 0; fat_img[14] = 0; fat_img[15] = 0;
     /* offset (BE) = 0x400 */
@@ -159,23 +162,23 @@ main(void)
     elf64_t fe;
     int frc = macho_load_buffer(fat_img, sizeof fat_img, &fe);
     CHECK(frc == 0);
-    CHECK(fe.machine == EM_AARCH64);
+    CHECK(fe.machine == EM_X86_64);
     CHECK(fe.nseg == 1);
 
     /* Preference matches the slice we put in → no warning. */
-    macho_set_preferred_arch("arm64");
+    macho_set_preferred_arch("x86_64");
     elf64_t fe2;
     frc = macho_load_buffer(fat_img, sizeof fat_img, &fe2);
     CHECK(frc == 0);
-    CHECK(fe2.machine == EM_AARCH64);
+    CHECK(fe2.machine == EM_X86_64);
 
     /* Preference that doesn't match → first slice wins with a
      * warning (same behaviour as no-hint path). */
-    macho_set_preferred_arch("x86_64");
+    macho_set_preferred_arch("arm64");
     elf64_t fe3;
     frc = macho_load_buffer(fat_img, sizeof fat_img, &fe3);
     CHECK(frc == 0);
-    CHECK(fe3.machine == EM_AARCH64);  /* the only slice */
+    CHECK(fe3.machine == EM_X86_64);  /* the only slice */
 
     /* Reset state to avoid bleed between parallel tests. */
     macho_set_preferred_arch(NULL);
