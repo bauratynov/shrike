@@ -44,8 +44,10 @@ static void test_parse_aarch64(void)
     printf("\nparse aarch64 recipe\n");
     recipe_t r;
     int rc = recipe_parse("x0=*; x1=0x42; svc", &r, EM_AARCH64);
-    /* 'svc' is not a DSL keyword — only 'syscall'. Parser should fail. */
-    CHECK(rc == -1, "svc is not a keyword (expected fail)");
+    /* v1.4.1: svc accepted as aarch64-canonical alias for the
+     * syscall terminator (analogue: ecall for RV64). */
+    CHECK(rc == 0, "svc accepted as syscall alias");
+    CHECK(r.n == 3, "3 statements (x0=*, x1=0x42, svc)");
 
     rc = recipe_parse("x0=*; x1=0x42; syscall", &r, EM_AARCH64);
     CHECK(rc == 0, "parse with syscall keyword");
