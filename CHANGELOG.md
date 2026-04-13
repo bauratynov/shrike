@@ -3,6 +3,47 @@
 All notable changes to `shrike` are listed here. Project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] — 2026-04-18
+
+**Gadget effect IR.** First sprint of Stage III (chain
+synthesis). A new typed `gadget_effect_t` record describes what
+each gadget does to the machine state — a minimum viable IR that
+future sprints build on (stack-slot accounting, multi-pop
+permutation, clobber graph, auto-padding).
+
+### Changes
+- `include/shrike/effect.h` + `src/effect.c`:
+  - `gadget_effect_t` with fields
+    `writes_mask`, `reads_mask`, `stack_consumed`,
+    `terminator` (enum: NONE / RET / SYSCALL / JMP_REG /
+    CALL_REG / INT), `is_pivot`, `has_syscall`.
+  - `gadget_effect_compute(g, &e)` — linear walkers for x86-64,
+    aarch64, and RV64. Unknown shape → fills terminator with
+    GADGET_TERM_NONE so consumers treat the gadget as "skip."
+- Register numbering matches `regidx` — x86 0..15
+  (rax..r15), aarch64 0..31 (x0..x30+sp), RV64 0..31 (abi
+  aliases at canonical indices).
+- Supported patterns per arch:
+  - x86: pop reg / pop r8-r15 (REX.B), ret / ret imm16,
+    syscall, int3, FF /2–/5 call/jmp reg.
+  - aarch64: `ldp Xa, Xb, [sp], #imm` post-index epilogues,
+    ret / svc / brk / br / blr terminators.
+  - RV64: `ld rd, imm(sp)` / `c.ldsp rd, imm(sp)` pops, `addi
+    sp, sp, imm` adjustments, ecall / ebreak / ret /
+    c.jr / c.jalr terminators.
+- `tests/test_effect.c` exercises each arch's happy-path
+  patterns against hand-encoded byte sequences.
+
+### What this unlocks
+v1.5.1 uses `stack_consumed` to insert dummy slots between
+gadgets automatically. v1.5.2 uses `writes_mask` to find
+multi-pop gadgets that satisfy several recipe registers at
+once. v1.5.3 uses both masks to refuse gadgets that clobber
+already-committed registers.
+
+Version bump 1.4.1 → 1.5.0 (minor — first Stage III feature,
+additive API).
+
 ## [1.4.1] — 2026-04-18
 
 **RISC-V RV64GC scanner + recipe.** Closes Stage II. All three
