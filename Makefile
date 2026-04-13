@@ -59,7 +59,7 @@ SHRIKE_VERSION := $(shell awk '\
 # unit that v2's stable C API will wrap — keep main.c out.
 LIB_SRC := \
     src/elf64.c src/pe.c src/macho.c \
-    src/xdec.c src/arm64.c src/scan.c src/format.c \
+    src/xdec.c src/arm64.c src/riscv.c src/scan.c src/format.c \
     src/strset.c src/cet.c src/category.c src/regidx.c src/recipe.c \
     src/sarif.c src/pivots.c src/version.c
 LIB_OBJ     := $(LIB_SRC:.c=.o)

@@ -3,6 +3,40 @@
 All notable changes to `shrike` are listed here. Project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] — 2026-04-18
+
+**RISC-V RV64GC length decoder + terminator classifier.**
+Sprint 9, opens Stage II's last platform. Parser-level
+infrastructure for RV64 gadget scanning lands now; scanner
+wiring + recipe integration is v1.4.1.
+
+### Changes
+- `include/shrike/riscv.h` + `src/riscv.c`:
+  - `riscv_insn_len(bytes, remaining)` — 2-byte (compressed
+    RVC) vs 4-byte (base ISA) discriminated by the low two
+    bits of the first halfword. 48-bit+ forms (reserved for
+    future extensions, not emitted by any real compiler today)
+    are rejected with length 0.
+  - `riscv_classify_terminator()` — recognises JALR, ECALL,
+    EBREAK, MRET, SRET on the 32-bit side; C.JR and C.JALR on
+    the 16-bit side.
+  - `riscv_is_ret()` — collapses the two ret spellings
+    (`jalr x0, x1, 0` and `c.jr x1`) to one bool for the
+    scanner.
+- `tests/test_riscv.c` hand-encodes each terminator variant
+  from the ISA spec + a couple of non-terminator opcodes and
+  pins both forward (classify) and reverse (is_ret) paths.
+
+### Scope deferred to v1.4.1
+The scanner dispatch, register-control index, and recipe DSL
+all still special-case x86-64 + aarch64. Wiring RV64 into
+those layers lands in the next patch bump, along with the
+`a0..a7 + s0..s11` register map for `a0=*; a7=59; ecall`
+recipes.
+
+Version bump 1.3.1 → 1.4.0 (minor — new architecture,
+additive).
+
 ## [1.3.1] — 2026-04-18
 
 **Mach-O universal binary dispatch.** Fat/universal binaries

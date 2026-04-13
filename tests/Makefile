@@ -6,7 +6,7 @@ CFLAGS   += $(CSTD) $(WARN) $(OPT) -I../include
 
 LIB := ../libshrike.a
 
-TESTS := test_xdec test_scan test_cet test_arm64 test_category test_regidx test_recipe test_version test_pe test_macho
+TESTS := test_xdec test_scan test_cet test_arm64 test_category test_regidx test_recipe test_version test_pe test_macho test_riscv
 
 .PHONY: all run clean
 
@@ -45,6 +45,9 @@ test_pe: test_pe.c $(LIB)
 	$(CC) $(CFLAGS) -o $@ $< $(LIB)
 
 test_macho: test_macho.c $(LIB)
+	$(CC) $(CFLAGS) -o $@ $< $(LIB)
+
+test_riscv: test_riscv.c $(LIB)
 	$(CC) $(CFLAGS) -o $@ $< $(LIB)
 
 run: $(TESTS)
