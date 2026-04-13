@@ -3,6 +3,47 @@
 All notable changes to `shrike` are listed here. Project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.1] — 2026-04-18
+
+**RISC-V RV64GC scanner + recipe.** Closes Stage II. All three
+new architectures (PE/COFF, Mach-O, RV64) are now fully
+first-class: loaded, scanned, classified, and usable from the
+chain-composer DSL.
+
+### Changes
+- `elf64.c` drops the `EM_RISCV -> -4 (ENOTSUP)` short-circuit.
+  RV64 ELFs load through the normal PT_LOAD path and feed into
+  the scanner.
+- `scan.c` grows `scan_riscv()` — variable-length (2/4 byte)
+  forward-from-terminator scan, mirroring the x86 backtrack
+  logic but at 2-byte stride. Emits a 1-insn gadget for every
+  standalone terminator plus every valid multi-insn tail that
+  lands exactly on the terminator.
+- Terminator filtering honours `cfg->include_syscall` for ECALL,
+  `cfg->include_int` for EBREAK, `cfg->include_ff` for the
+  linked C.JALR form. JALR, C.JR, MRET, SRET always on.
+- `format.c` adds `emit_one_rv()` — minimal mnemonic render
+  for the terminator family (ret / jalr / ecall / ebreak /
+  mret / sret / c.jr / c.jalr). Everything else falls back to
+  `.word 0x...` / `.hword 0x...` — the same "honest about what
+  we don't decode" approach arm64 took in v0.5.
+- `format.c` / `regidx.c` / `recipe.c`: arch name "riscv64"
+  surfaces in text, JSON-Lines, pwntools, and SARIF outputs.
+- `regidx.c`: RV64 ABI register map (a0..a7, s0..s11 as
+  canonical; x0..x31 accepted as aliases at lookup). New
+  `observe_rv()` credits canonical `ld regN, imm(sp) ; ... ;
+  ret` epilogue patterns — both 4-byte `ld` and compressed
+  `c.ldsp` flavours. System-call detection recognises the
+  standalone 4-byte ecall encoding.
+- `recipe.c`: DSL accepts `ecall` / `svc` / `syscall` as
+  arch-agnostic aliases for the system-call terminator.
+  `a0=*; a7=59; ecall` resolves on an RV64 input.
+- `main.c` drops the outdated "use --raw --raw-arch riscv"
+  message; arch string handling includes `riscv64`.
+
+Version bump 1.4.0 → 1.4.1. Closes Stage II of V2_ROADMAP. Stage
+III (chain synthesis) starts at v1.5.0.
+
 ## [1.4.0] — 2026-04-18
 
 **RISC-V RV64GC length decoder + terminator classifier.**

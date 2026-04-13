@@ -26,6 +26,7 @@
 #include <shrike/cet.h>
 #include <shrike/xdec.h>
 #include <shrike/arm64.h>
+#include <shrike/riscv.h>
 #include <shrike/elf64.h>
 
 #include <inttypes.h>
@@ -295,19 +296,64 @@ static int emit_one_a64(strbuf_t *sb, const uint8_t *buf, size_t max)
     return 4;
 }
 
+/* --- RISC-V per-instruction emission (terminator mnemonics only) --- */
+
+static int emit_one_rv(strbuf_t *sb, const uint8_t *buf, size_t max)
+{
+    size_t len = riscv_insn_len(buf, max);
+    if (len == 0) return -1;
+    riscv_term_t k = riscv_classify_terminator(buf, len);
+
+    if (len == 2) {
+        uint16_t h = (uint16_t)(buf[0] | (buf[1] << 8));
+        uint32_t rs1 = (h >> 7) & 0x1f;
+        if (k == RV_TERM_C_JR && rs1 == 1) { sb_printf(sb, "ret"); return 2; }
+        if (k == RV_TERM_C_JR)   { sb_printf(sb, "c.jr x%u", (unsigned)rs1); return 2; }
+        if (k == RV_TERM_C_JALR) { sb_printf(sb, "c.jalr x%u", (unsigned)rs1); return 2; }
+        sb_printf(sb, ".hword 0x%04x", (unsigned)h);
+        return 2;
+    }
+
+    /* 4-byte */
+    uint32_t w = (uint32_t)buf[0] | ((uint32_t)buf[1] << 8) |
+                 ((uint32_t)buf[2] << 16) | ((uint32_t)buf[3] << 24);
+    switch (k) {
+    case RV_TERM_JALR: {
+        uint32_t rd  = (w >> 7)  & 0x1f;
+        uint32_t rs1 = (w >> 15) & 0x1f;
+        int      imm = (int)(w >> 20);
+        if (imm & 0x800) imm -= 0x1000;
+        if (rd == 0 && rs1 == 1 && imm == 0) sb_printf(sb, "ret");
+        else sb_printf(sb, "jalr x%u, x%u, %d",
+                        (unsigned)rd, (unsigned)rs1, imm);
+        return 4;
+    }
+    case RV_TERM_ECALL:  sb_printf(sb, "ecall");  return 4;
+    case RV_TERM_EBREAK: sb_printf(sb, "ebreak"); return 4;
+    case RV_TERM_MRET:   sb_printf(sb, "mret");   return 4;
+    case RV_TERM_SRET:   sb_printf(sb, "sret");   return 4;
+    default: break;
+    }
+    sb_printf(sb, ".word 0x%08x", (unsigned)w);
+    return 4;
+}
+
 /* --- public API --- */
 
 static void render_insns(strbuf_t *sb, const gadget_t *g)
 {
     size_t p = 0;
     int    first = 1;
-    int    is_a64 = (g->machine == EM_AARCH64);
 
     while (p < g->length) {
         if (!first) sb_printf(sb, " ; ");
-        int n = is_a64
-              ? emit_one_a64(sb, g->bytes + p, g->length - p)
-              : emit_one(sb, g->bytes + p, g->length - p);
+        int n;
+        if (g->machine == EM_AARCH64)
+            n = emit_one_a64(sb, g->bytes + p, g->length - p);
+        else if (g->machine == EM_RISCV)
+            n = emit_one_rv(sb, g->bytes + p, g->length - p);
+        else
+            n = emit_one(sb, g->bytes + p, g->length - p);
         if (n <= 0) { sb_printf(sb, "?"); return; }
         p += (size_t)n;
         first = 0;
@@ -407,14 +453,15 @@ static void json_escape_str(strbuf_t *sb, const char *s)
 /* Render a single instruction as a JSON string element (including the
  * surrounding quotes). Returns instruction length, or <= 0 on failure. */
 static int emit_one_json(strbuf_t *sb, const uint8_t *buf, size_t max,
-                         int is_a64)
+                         uint16_t machine)
 {
     /* reuse the architecture emitter into a local strbuf, then escape */
     char local[128];
     strbuf_t inner = { local, sizeof local, 0, 0 };
-    int n = is_a64
-          ? emit_one_a64(&inner, buf, max)
-          : emit_one(&inner, buf, max);
+    int n;
+    if (machine == EM_AARCH64)      n = emit_one_a64(&inner, buf, max);
+    else if (machine == EM_RISCV)   n = emit_one_rv(&inner, buf, max);
+    else                            n = emit_one(&inner, buf, max);
     if (n <= 0) return n;
 
     sb_printf(sb, "\"");
@@ -425,16 +472,19 @@ static int emit_one_json(strbuf_t *sb, const uint8_t *buf, size_t max,
 
 static void render_json(strbuf_t *sb, const gadget_t *g)
 {
-    int is_a64 = (g->machine == EM_AARCH64);
+    const char *arch_name = "x86_64";
+    if (g->machine == EM_AARCH64) arch_name = "aarch64";
+    else if (g->machine == EM_RISCV) arch_name = "riscv64";
 
     sb_printf(sb, "{\"addr\":\"0x%016" PRIx64 "\",\"arch\":\"%s\","
                   "\"insns\":[",
-              g->vaddr, is_a64 ? "aarch64" : "x86_64");
+              g->vaddr, arch_name);
     size_t p = 0;
     int    first = 1;
     while (p < g->length) {
         if (!first) sb_printf(sb, ",");
-        int n = emit_one_json(sb, g->bytes + p, g->length - p, is_a64);
+        int n = emit_one_json(sb, g->bytes + p, g->length - p,
+                              g->machine);
         if (n <= 0) { if (!first) sb_printf(sb, "\"?\""); break; }
         p += (size_t)n;
         first = 0;

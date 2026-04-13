@@ -17,6 +17,7 @@
 #include <shrike/scan.h>
 #include <shrike/xdec.h>
 #include <shrike/arm64.h>
+#include <shrike/riscv.h>
 #include <shrike/elf64.h>
 
 #include <string.h>
@@ -196,6 +197,100 @@ static size_t scan_aarch64(const elf64_segment_t *seg,
 }
 
 /* ============================================================
+ * RISC-V RV64GC scanner
+ * ============================================================
+ * Variable-length (2 vs 4 bytes) like x86, but much more regular.
+ * We walk terminator candidates at 2-byte stride, and for each
+ * candidate try every valid backward start offset (also in 2-byte
+ * steps). From a candidate start, forward-decode instructions
+ * with riscv_insn_len until we either land exactly on the
+ * terminator (emit) or overshoot / fail to decode (skip).
+ */
+
+static int
+rv_terminator_enabled(riscv_term_t k, const scan_config_t *cfg)
+{
+    switch (k) {
+    case RV_TERM_JALR:
+    case RV_TERM_C_JR:       return 1;                  /* ret / jmp reg */
+    case RV_TERM_C_JALR:     return cfg->include_ff;    /* jalr with link */
+    case RV_TERM_ECALL:      return cfg->include_syscall;
+    case RV_TERM_EBREAK:     return cfg->include_int;
+    case RV_TERM_MRET:
+    case RV_TERM_SRET:       return 1;                  /* privileged ret */
+    default:                 return 0;
+    }
+}
+
+static size_t scan_riscv(const elf64_segment_t *seg,
+                         const scan_config_t   *cfg,
+                         gadget_cb_t            cb,
+                         void                  *ctx)
+{
+    size_t emitted = 0;
+
+    for (size_t t = 0; t + 2 <= seg->size; t += 2) {
+        size_t tl = riscv_insn_len(seg->bytes + t, seg->size - t);
+        if (tl == 0) continue;
+        riscv_term_t kind = riscv_classify_terminator(seg->bytes + t, tl);
+        if (kind == RV_TERM_NONE) continue;
+        if (!rv_terminator_enabled(kind, cfg)) continue;
+
+        size_t term_end = t + tl;
+        /* Max backscan expressed in bytes — stride is 2, max insn
+         * length is 4, so max_insn instructions consume up to
+         * 4 * max_insn bytes. */
+        size_t max_back = (size_t)cfg->max_insn * 4;
+        if (t < max_back) max_back = t;
+
+        for (size_t offset = 2; offset <= max_back; offset += 2) {
+            size_t s = t - offset;
+            size_t p = s;
+            int    insns = 0;
+            int    ok = 0;
+
+            while (p < t && insns < cfg->max_insn) {
+                size_t il = riscv_insn_len(seg->bytes + p,
+                                           seg->size - p);
+                if (il == 0) break;
+                if (p + il > t) break;
+                p += il;
+                insns++;
+            }
+            if (p == t && insns < cfg->max_insn) {
+                /* Include the terminator as the final instruction. */
+                insns++;
+                ok = 1;
+            }
+
+            if (ok) {
+                gadget_t g;
+                g.vaddr      = seg->vaddr + s;
+                g.offset     = s;
+                g.length     = term_end - s;
+                g.insn_count = insns;
+                g.bytes      = seg->bytes + s;
+                g.machine    = seg->machine;
+                cb(seg, &g, ctx);
+                emitted++;
+            }
+        }
+
+        /* Also emit the bare terminator as a 1-insn gadget. */
+        gadget_t g;
+        g.vaddr      = seg->vaddr + t;
+        g.offset     = t;
+        g.length     = tl;
+        g.insn_count = 1;
+        g.bytes      = seg->bytes + t;
+        g.machine    = seg->machine;
+        cb(seg, &g, ctx);
+        emitted++;
+    }
+    return emitted;
+}
+
+/* ============================================================
  * Dispatch
  * ============================================================ */
 
@@ -211,6 +306,9 @@ size_t scan_segment(const elf64_segment_t *seg,
 
     if (seg->machine == EM_AARCH64) {
         return scan_aarch64(seg, cfg, cb, ctx);
+    }
+    if (seg->machine == EM_RISCV) {
+        return scan_riscv(seg, cfg, cb, ctx);
     }
     /* Default / EM_X86_64 */
     return scan_x86(seg, cfg, cb, ctx);

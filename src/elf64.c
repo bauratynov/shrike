@@ -49,12 +49,12 @@ static int parse(elf64_t *e)
     if (eh->e_ident[4] != ELFCLASS64 || eh->e_ident[5] != ELFDATA2LSB) {
         errno = ENOTSUP; return -1;
     }
-    if (eh->e_machine == EM_RISCV) {
-        /* v0.24.0: RISC-V scanner is pending; return a distinct code
-         * so main() can emit an actionable message. */
-        errno = ENOTSUP; return -4;
-    }
-    if (eh->e_machine != EM_X86_64 && eh->e_machine != EM_AARCH64) {
+    /* v1.4.1: RISC-V is a first-class arch now; accept alongside
+     * x86-64 and aarch64. Older code paths still check for the
+     * -4 sentinel if they want to diff behaviour. */
+    if (eh->e_machine != EM_X86_64 &&
+        eh->e_machine != EM_AARCH64 &&
+        eh->e_machine != EM_RISCV) {
         errno = ENOTSUP; return -1;
     }
     if (eh->e_phentsize != sizeof(Elf64_Phdr)) { errno = EINVAL; return -1; }

@@ -35,8 +35,13 @@ static int parse_stmt(const char *p, const char *q,
 
     if (out->n >= RECIPE_MAX_STMTS) return -1;
 
-    /* keyword statements */
-    if (len == 7 && strncmp(p, "syscall", 7) == 0) {
+    /* keyword statements — arch-canonical spellings all alias to
+     * RSTMT_SYSCALL so a single recipe can move between x86_64
+     * `syscall`, aarch64 `svc`, and riscv64 `ecall`. The picker
+     * emits the right terminator at rendering time. */
+    if ((len == 7 && strncmp(p, "syscall", 7) == 0) ||
+        (len == 3 && strncmp(p, "svc", 3) == 0) ||
+        (len == 5 && strncmp(p, "ecall", 5) == 0)) {
         out->stmts[out->n++].op = RSTMT_SYSCALL;
         return 0;
     }
@@ -103,7 +108,9 @@ static int resolve_text(const recipe_t *r, const regidx_t *idx,
                         uint16_t machine, FILE *f)
 {
     int missing = 0;
-    const char *arch = (machine == EM_AARCH64) ? "aarch64" : "x86_64";
+    const char *arch = (machine == EM_AARCH64) ? "aarch64"
+                     : (machine == EM_RISCV)   ? "riscv64"
+                     :                           "x86_64";
 
     fprintf(f, "# shrike chain from recipe  (arch: %s)\n", arch);
     fprintf(f, "# format: addr  note                         (one slot per line)\n");
@@ -134,9 +141,11 @@ static int resolve_text(const recipe_t *r, const regidx_t *idx,
                 fprintf(f, "# MISSING: no syscall gadget\n");
                 missing++;
             } else {
+                const char *mnemo = "syscall";
+                if (machine == EM_AARCH64)    mnemo = "svc";
+                else if (machine == EM_RISCV) mnemo = "ecall";
                 fprintf(f, "0x%016" PRIx64 "  # %s\n",
-                        idx->syscall_addrs[0],
-                        machine == EM_AARCH64 ? "svc" : "syscall");
+                        idx->syscall_addrs[0], mnemo);
             }
         } else if (s->op == RSTMT_RET) {
             fprintf(f, "# (explicit ret — caller places an address here)\n");
@@ -157,8 +166,10 @@ static int resolve_pwntools(const recipe_t *r, const regidx_t *idx,
                             FILE *f)
 {
     int missing = 0;
-    const char *ctx_arch =
-        (machine == EM_AARCH64) ? "aarch64" : "amd64";
+    /* pwntools context.arch names: 'amd64', 'aarch64', 'riscv64'. */
+    const char *ctx_arch = "amd64";
+    if (machine == EM_AARCH64)    ctx_arch = "aarch64";
+    else if (machine == EM_RISCV) ctx_arch = "riscv64";
 
     fprintf(f,
         "#!/usr/bin/env python3\n"
