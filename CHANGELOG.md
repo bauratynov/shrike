@@ -3,6 +3,32 @@
 All notable changes to `shrike` are listed here. Project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.1] — 2026-04-18
+
+**SSE (non-VEX) coverage.** Function prologue/epilogue gadgets
+that save and restore xmm registers now render as real
+instructions instead of `db 0x66, 0x0f, 0x28, 0x44, ...`.
+
+### Changes
+- `xmm_regs[16]` table. REX.R / REX.B route idx to xmm8..xmm15.
+- Opcodes recognised (all in the 0x0F map):
+  - MOVAPS / MOVUPS / MOVAPD / MOVUPD   (0F 28/29/10/11, ±66)
+  - MOVDQA                                (66 0F 6F / 66 0F 7F)
+  - PXOR                                   (0F EF)
+- Both reg-reg and memory forms. Memory forms use
+  `render_rm_mem` from v1.6.0.
+- VEX-prefixed AVX (C4/C5 escape) and AVX-512 (EVEX) stay
+  deferred — VEX doubles the prefix-handling in xdec and is
+  worth a standalone sprint in V3 Stage VII.
+
+### Example
+Before: `db 0x0f, 0x28, 0x44, 0x24, 0x20`
+After:  `movaps xmm0, [rsp+0x20]`
+
+Stack pivot and stack-spill gadgets read naturally now.
+
+Version bump 1.6.0 → 1.6.1 (additive).
+
 ## [1.6.0] — 2026-04-18
 
 **x86-64 operand decoder — first pass.** Opens Stage IV

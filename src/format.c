@@ -161,6 +161,12 @@ render_rm_mem(strbuf_t *sb, const xdec_info_t *info, const uint8_t *buf)
     return 0;
 }
 
+/* v1.6.1: SSE register names. REX.R / REX.B extend to xmm8..15. */
+static const char *xmm_regs[16] = {
+    "xmm0", "xmm1", "xmm2",  "xmm3",  "xmm4",  "xmm5",  "xmm6",  "xmm7",
+    "xmm8", "xmm9", "xmm10", "xmm11", "xmm12", "xmm13", "xmm14", "xmm15"
+};
+
 static const char *cmov_cc[16] = {
     "cmovo",  "cmovno", "cmovb",  "cmovnb", "cmovz",  "cmovnz",
     "cmovbe", "cmova",  "cmovs",  "cmovns", "cmovp",  "cmovnp",
@@ -360,6 +366,49 @@ static int emit_one(strbuf_t *sb, const uint8_t *buf, size_t max)
                           bt_grp[reg - 4],
                           pick_reg(w, op66, 0, info.rex, rm),
                           buf[info.length - 1]);
+                return info.length;
+            }
+        }
+
+        /* v1.6.1: SSE moves and common XOR appearing in epilogues.
+         * We recognise the non-VEX encodings; VEX-prefixed AVX
+         * (C4/C5 prefix) stays in a future patch bump alongside
+         * the mask-register work. */
+        {
+            int rex_r   = (info.rex >> 2) & 1;
+            int rex_b   = (info.rex >> 0) & 1;
+            uint8_t mod = (info.modrm >> 6) & 3;
+            uint8_t reg = ((info.modrm >> 3) & 7) | (rex_r << 3);
+            uint8_t rm  = (info.modrm & 7) | (rex_b << 3);
+
+            /* MOVAPS / MOVAPD / MOVDQA — 0F 28 / 0F 29 (aps),
+             * 66 0F 28 / 66 0F 29 (apd), 66 0F 6F / 66 0F 7F (dqa).
+             * MOVUPS 0F 10 / 0F 11 likewise but non-aligned. */
+            const char *mnemo = NULL;
+            int store = 0;     /* destination is memory */
+            if (op == 0x28) { mnemo = op66 ? "movapd" : "movaps"; store = 0; }
+            else if (op == 0x29) { mnemo = op66 ? "movapd" : "movaps"; store = 1; }
+            else if (op == 0x10) { mnemo = op66 ? "movupd" : "movups"; store = 0; }
+            else if (op == 0x11) { mnemo = op66 ? "movupd" : "movups"; store = 1; }
+            else if (op == 0x6F && op66) { mnemo = "movdqa"; store = 0; }
+            else if (op == 0x7F && op66) { mnemo = "movdqa"; store = 1; }
+            else if (op == 0xEF)         { mnemo = op66 ? "pxor" : "pxor"; store = 0; }
+
+            if (mnemo) {
+                if (mod == 3) {
+                    const char *dst = store ? xmm_regs[rm]  : xmm_regs[reg];
+                    const char *src = store ? xmm_regs[reg] : xmm_regs[rm];
+                    sb_printf(sb, "%s %s, %s", mnemo, dst, src);
+                } else {
+                    if (store) {
+                        sb_printf(sb, "%s ", mnemo);
+                        render_rm_mem(sb, &info, buf);
+                        sb_printf(sb, ", %s", xmm_regs[reg]);
+                    } else {
+                        sb_printf(sb, "%s %s, ", mnemo, xmm_regs[reg]);
+                        render_rm_mem(sb, &info, buf);
+                    }
+                }
                 return info.length;
             }
         }
