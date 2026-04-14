@@ -3,6 +3,47 @@
 All notable changes to `shrike` are listed here. Project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.2] — 2026-04-18
+
+**AArch64 expanded coverage (Stage IV complete).** arm64.c goes
+from 8 recognised opcode shapes to about 20 — all the ones that
+appear in gadget epilogues and prologues on modern GCC/LLVM
+output.
+
+### Changes
+- New `reg_name(r, sf, sp_form)` helper that handles the SP-vs-XZR
+  ambiguity at register index 31 for the encodings where it
+  matters.
+- New renderers wired into `arm64_render_insn`:
+  - `render_ldp`: LDP Xt1, Xt2 with all three addressing modes
+    (post-index, pre-index, signed offset). 64-bit form for now;
+    32-bit lands later.
+  - `render_add_sub_imm`: ADD / ADDS / SUB / SUBS with 12-bit
+    immediate, optional LSL #12 shift. Handles SP-form rd/rn
+    for plain add/sub; flag-setting variants use xzr alias.
+  - `render_mov_wide`: MOVZ / MOVK / MOVN with the full hw
+    shift (0/16/32/48).
+  - `render_b_bl`: unconditional branch / branch-with-link,
+    26-bit signed PC-relative offset.
+- The existing 8 opcodes (RET/BR/BLR/SVC/BTI/NOP/MOV/RETAA-RETAB)
+  remain; new renderers slot in after `render_mov_reg`.
+
+### Still out of scope
+- Full ALU register forms (ADD/SUB/AND/ORR/EOR reg + shift)
+- LDR / STR with all addressing modes
+- CBZ / CBNZ / TBZ / TBNZ compare-and-branch
+- Conditional branch B.cond
+- SIMD / FP opcodes
+These land in V3 Stage VII as part of the semantic-depth work;
+what's here is enough for gadget epilogue readability, which
+was the sprint goal.
+
+### Stage IV — complete
+v1.6.0 → v1.6.1 → v1.6.2 shipped. Stage V (Python binding)
+opens at v1.7.0.
+
+Version bump 1.6.1 → 1.6.2 (additive).
+
 ## [1.6.1] — 2026-04-18
 
 **SSE (non-VEX) coverage.** Function prologue/epilogue gadgets
