@@ -129,12 +129,27 @@ static int resolve_text(const recipe_t *r, const regidx_t *idx,
             }
 
             uint64_t g_addr = idx->addrs[s->reg][0];
-            fprintf(f, "0x%016" PRIx64 "  # pop %s ; ret\n", g_addr, rn);
+            uint32_t stack  = idx->stack_consumed[s->reg][0];
+            fprintf(f, "0x%016" PRIx64 "  # pop %s ; ret  (stack: %u bytes)\n",
+                    g_addr, rn, (unsigned)stack);
             if (s->is_literal) {
                 fprintf(f, "0x%016" PRIx64 "  # %s = 0x%" PRIx64 "\n",
                         s->value, rn, s->value);
             } else {
                 fprintf(f, "<value>            # %s (fill at exploit time)\n", rn);
+            }
+            /* v1.5.1: multi-pop gadgets (e.g. `pop rdi ; pop rsi ;
+             * ret`, stack=24) consume more than the default
+             * 16 bytes. Pad the extra slots with 0xdeadbeef so the
+             * emitter keeps alignment with the gadget's actual
+             * footprint. 16 = 1 addr slot + 1 value slot; anything
+             * beyond is padding. */
+            if (stack > 16) {
+                uint32_t extra = (stack - 16) / 8;
+                for (uint32_t k = 0; k < extra; k++) {
+                    fprintf(f,
+                        "0x00000000deadbeef  # padding (multi-pop spillover)\n");
+                }
             }
         } else if (s->op == RSTMT_SYSCALL) {
             if (idx->syscall_count == 0) {

@@ -11,6 +11,7 @@
 #include <shrike/regidx.h>
 #include <shrike/arm64.h>
 #include <shrike/riscv.h>
+#include <shrike/effect.h>
 #include <shrike/elf64.h>
 
 #include <inttypes.h>
@@ -99,6 +100,22 @@ static void add_addr(uint64_t *slots, uint16_t *count, uint64_t addr)
     slots[(*count)++] = addr;
 }
 
+/* v1.5.1: credit a (reg, addr, stack_consumed) tuple. Stack info
+ * lets the chain emitter pad payloads correctly for multi-pop
+ * gadgets without a second parse pass. */
+static void
+regidx_credit(regidx_t *ri, int r, uint64_t addr, uint32_t stack)
+{
+    if (r < 0 || r >= REGIDX_MAX_REGS) return;
+    if (ri->counts[r] >= REGIDX_MAX_PER) return;
+    for (uint16_t i = 0; i < ri->counts[r]; i++) {
+        if (ri->addrs[r][i] == addr) return;
+    }
+    uint16_t idx = ri->counts[r]++;
+    ri->addrs[r][idx]          = addr;
+    ri->stack_consumed[r][idx] = stack;
+}
+
 static int is_x86_ret(uint8_t b) { return b == 0xC3; }
 
 static void observe_x86(regidx_t *ri, const gadget_t *g)
@@ -131,11 +148,11 @@ static void observe_x86(regidx_t *ri, const gadget_t *g)
     if (p + 1 != g->length) return;
     if (!is_x86_ret(g->bytes[p])) return;
 
-    /* Credit every popped register. */
+    gadget_effect_t ef;
+    gadget_effect_compute(g, &ef);
+
     for (int i = 0; i < n_regs; i++) {
-        int r = regs[i];
-        if (r < 0 || r >= REGIDX_MAX_REGS) continue;
-        add_addr(ri->addrs[r], &ri->counts[r], g->vaddr);
+        regidx_credit(ri, regs[i], g->vaddr, ef.stack_consumed);
     }
 }
 
@@ -190,10 +207,11 @@ static void observe_a64(regidx_t *ri, const gadget_t *g)
         (last & 0xFFFFFBFFu) == 0xD65F0BFFu;
     if (!is_ret) return;
 
+    gadget_effect_t ef;
+    gadget_effect_compute(g, &ef);
+
     for (int i = 0; i < n_regs; i++) {
-        int r = regs[i];
-        if (r < 0 || r >= REGIDX_MAX_REGS) continue;
-        add_addr(ri->addrs[r], &ri->counts[r], g->vaddr);
+        regidx_credit(ri, regs[i], g->vaddr, ef.stack_consumed);
     }
 }
 
@@ -270,8 +288,11 @@ static void observe_rv(regidx_t *ri, const gadget_t *g)
 
     if (!ends_in_ret) return;
 
+    gadget_effect_t ef;
+    gadget_effect_compute(g, &ef);
+
     for (int i = 0; i < n_regs; i++) {
-        add_addr(ri->addrs[regs[i]], &ri->counts[regs[i]], g->vaddr);
+        regidx_credit(ri, regs[i], g->vaddr, ef.stack_consumed);
     }
 }
 

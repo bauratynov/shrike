@@ -3,6 +3,40 @@
 All notable changes to `shrike` are listed here. Project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.1] — 2026-04-18
+
+**Stack-slot accounting in the recipe emitter.** Every gadget
+stored in the register-control index now carries the
+`stack_consumed` it computed via `gadget_effect_compute`. The
+chain emitter uses it to insert padding slots automatically
+when a multi-pop gadget consumes more than the default 16
+bytes — no more silently-misaligned payloads.
+
+### Changes
+- `regidx_t` grows `uint32_t stack_consumed[REGIDX_MAX_REGS]
+  [REGIDX_MAX_PER]`, a parallel array to `addrs[][]`. New
+  `regidx_credit(ri, r, addr, stack)` writes both in one step.
+- `observe_x86`, `observe_a64`, `observe_rv` each call
+  `gadget_effect_compute` once, then credit every register they
+  detect using the same stack_consumed value. This is correct
+  for pure `pop ... ; ret` chains where one gadget pops several
+  registers — the stack footprint is shared.
+- Text-format recipe emitter now annotates each line with the
+  gadget's footprint (`# pop rdi ; ret  (stack: 16 bytes)`)
+  and emits `0xdeadbeef`-filled padding lines when a gadget
+  consumes more than 2 slots. Comment flags the extras as
+  `padding (multi-pop spillover)` so exploit-dev users reading
+  the chain can spot them.
+
+### Not yet
+Multi-pop gadget *selection* is still v1.5.2 — the emitter
+currently still picks the first gadget from the per-register
+index. When v1.5.2 lands, the picker will scan for gadgets that
+set several needed regs in one shot and report the shared
+stack footprint accordingly.
+
+Version bump 1.5.0 → 1.5.1 (additive).
+
 ## [1.5.0] — 2026-04-18
 
 **Gadget effect IR.** First sprint of Stage III (chain

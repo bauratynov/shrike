@@ -31,6 +31,11 @@ extern "C" {
 
 typedef struct {
     uint64_t   addrs[REGIDX_MAX_REGS][REGIDX_MAX_PER];
+    /* v1.5.1: parallel array carrying the gadget's stack_consumed.
+     * Required by the chain emitter to thread dummy payload slots
+     * between gadgets whose stack footprint isn't the default 16
+     * bytes (e.g. `pop rdi ; pop rsi ; ret` needs 24, not 16). */
+    uint32_t   stack_consumed[REGIDX_MAX_REGS][REGIDX_MAX_PER];
     uint16_t   counts[REGIDX_MAX_REGS];
     uint16_t   machine;
     /* terminator helpers */
