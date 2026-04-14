@@ -67,26 +67,98 @@ static void sb_printf(strbuf_t *sb, const char *fmt, ...)
 
 /* --- register name tables --- */
 
-static const char *reg64[8] = {
-    "rax", "rcx", "rdx", "rbx", "rsp", "rbp", "rsi", "rdi"
+static const char *reg64[16] = {
+    "rax", "rcx", "rdx", "rbx", "rsp", "rbp", "rsi", "rdi",
+    "r8",  "r9",  "r10", "r11", "r12", "r13", "r14", "r15"
 };
-static const char *reg32[8] = {
-    "eax", "ecx", "edx", "ebx", "esp", "ebp", "esi", "edi"
+static const char *reg32[16] = {
+    "eax", "ecx", "edx", "ebx", "esp", "ebp", "esi", "edi",
+    "r8d", "r9d", "r10d","r11d","r12d","r13d","r14d","r15d"
 };
-static const char *reg16[8] = {
-    "ax",  "cx",  "dx",  "bx",  "sp",  "bp",  "si",  "di"
+static const char *reg16[16] = {
+    "ax",  "cx",  "dx",  "bx",  "sp",  "bp",  "si",  "di",
+    "r8w", "r9w", "r10w","r11w","r12w","r13w","r14w","r15w"
 };
-static const char *reg8_nohi[8] = {
-    "al",  "cl",  "dl",  "bl",  "spl", "bpl", "sil", "dil"
+static const char *reg8_nohi[16] = {
+    "al",  "cl",  "dl",  "bl",  "spl", "bpl", "sil", "dil",
+    "r8b", "r9b", "r10b","r11b","r12b","r13b","r14b","r15b"
 };
 
 static const char *pick_reg(int w, int b16, int b8, int rex, int idx)
 {
-    if (w)   return reg64[idx & 7];
-    if (b16) return reg16[idx & 7];
-    if (b8)  return reg8_nohi[idx & 7];
-    if (rex) return reg64[idx & 7];
-    return reg32[idx & 7];
+    if (w)   return reg64[idx & 15];
+    if (b16) return reg16[idx & 15];
+    if (b8)  return reg8_nohi[idx & 15];
+    if (rex) return reg64[idx & 15];
+    return reg32[idx & 15];
+}
+
+/* v1.6.0: render the r/m operand as a memory expression.
+ * Caller guarantees mod != 3 (register form).
+ * Writes "[base + index*scale + disp]" / "[rip+disp]" etc.
+ * into sb; returns 0 on success, -1 if the operand shape is
+ * something we don't render (e.g. 16-bit addressing). */
+static int
+render_rm_mem(strbuf_t *sb, const xdec_info_t *info, const uint8_t *buf)
+{
+    uint8_t mod = (info->modrm >> 6) & 3;
+    uint8_t rm  = info->modrm & 7;
+    int rex_b   = (info->rex >> 0) & 1;
+    int rex_x   = (info->rex >> 1) & 1;
+
+    const char *base_s  = NULL;
+    const char *index_s = NULL;
+    int scale = 1;
+
+    if (info->sib_present) {
+        uint8_t ss = (info->sib >> 6) & 3;
+        uint8_t ix = (info->sib >> 3) & 7;
+        uint8_t bs = info->sib & 7;
+        scale = 1 << ss;
+        /* base field == 5 + mod == 0 means "no base, disp32 only". */
+        if (!(bs == 5 && mod == 0))
+            base_s = reg64[(rex_b << 3) | bs];
+        /* index field == 4 means "no index" (SIB encodes sp as no-index). */
+        if (ix != 4 || rex_x)
+            index_s = reg64[(rex_x << 3) | ix];
+    } else {
+        /* Non-SIB. mod=0 and rm=5 is RIP-relative on x86-64. */
+        if (mod == 0 && rm == 5) {
+            base_s = "rip";
+        } else {
+            base_s = reg64[(rex_b << 3) | rm];
+        }
+    }
+
+    /* Read the displacement from the tail of the instruction. */
+    int32_t disp = 0;
+    if (info->disp_bytes == 1) {
+        disp = (int8_t)buf[info->length - 1];
+    } else if (info->disp_bytes == 4) {
+        disp = (int32_t)((uint32_t)buf[info->length - 4] |
+                         ((uint32_t)buf[info->length - 3] << 8) |
+                         ((uint32_t)buf[info->length - 2] << 16) |
+                         ((uint32_t)buf[info->length - 1] << 24));
+    }
+
+    sb_printf(sb, "[");
+    int need_plus = 0;
+    if (base_s) { sb_printf(sb, "%s", base_s); need_plus = 1; }
+    if (index_s) {
+        sb_printf(sb, "%s%s", need_plus ? "+" : "", index_s);
+        if (scale > 1) sb_printf(sb, "*%d", scale);
+        need_plus = 1;
+    }
+    if (disp || !need_plus) {
+        if (disp < 0) {
+            sb_printf(sb, "-0x%x", (unsigned)(-disp));
+        } else {
+            sb_printf(sb, "%s0x%x",
+                      need_plus ? "+" : "", (unsigned)disp);
+        }
+    }
+    sb_printf(sb, "]");
+    return 0;
 }
 
 static const char *cmov_cc[16] = {
@@ -118,14 +190,20 @@ static int emit_one(strbuf_t *sb, const uint8_t *buf, size_t max)
     int     op66 = info.op66;
 
     if (info.map == 1) {
-        /* PUSH reg (0x50 - 0x57) */
+        /* PUSH reg (0x50 - 0x57) + REX.B for r8-r15. */
         if (op >= 0x50 && op <= 0x57) {
-            sb_printf(sb, "push %s", pick_reg(1, op66, 0, info.rex, op - 0x50));
+            int rex_b = (info.rex >> 0) & 1;
+            sb_printf(sb, "push %s",
+                      pick_reg(1, op66, 0, info.rex,
+                               (op - 0x50) | (rex_b << 3)));
             return info.length;
         }
-        /* POP reg (0x58 - 0x5F) */
+        /* POP reg (0x58 - 0x5F) + REX.B for r8-r15. */
         if (op >= 0x58 && op <= 0x5F) {
-            sb_printf(sb, "pop %s", pick_reg(1, op66, 0, info.rex, op - 0x58));
+            int rex_b = (info.rex >> 0) & 1;
+            sb_printf(sb, "pop %s",
+                      pick_reg(1, op66, 0, info.rex,
+                               (op - 0x58) | (rex_b << 3)));
             return info.length;
         }
         if (op == 0x90) { sb_printf(sb, "nop"); return info.length; }
@@ -182,14 +260,30 @@ static int emit_one(strbuf_t *sb, const uint8_t *buf, size_t max)
                       pick_reg(w, op66, 0, info.rex, op - 0xB8));
             return info.length;
         }
-        if ((op == 0x89 || op == 0x8B) && (info.modrm >> 6) == 3) {
-            uint8_t reg = (info.modrm >> 3) & 7;
-            uint8_t rm  = info.modrm & 7;
-            const char *dst = (op == 0x89) ? pick_reg(w, op66, 0, info.rex, rm)
-                                           : pick_reg(w, op66, 0, info.rex, reg);
-            const char *src = (op == 0x89) ? pick_reg(w, op66, 0, info.rex, reg)
-                                           : pick_reg(w, op66, 0, info.rex, rm);
-            sb_printf(sb, "mov %s, %s", dst, src);
+        if (op == 0x89 || op == 0x8B) {
+            int rex_r   = (info.rex >> 2) & 1;
+            uint8_t reg = ((info.modrm >> 3) & 7) | (rex_r << 3);
+            if ((info.modrm >> 6) == 3) {
+                int rex_b = (info.rex >> 0) & 1;
+                uint8_t rm = (info.modrm & 7) | (rex_b << 3);
+                const char *dst = (op == 0x89) ? pick_reg(w, op66, 0, info.rex, rm)
+                                               : pick_reg(w, op66, 0, info.rex, reg);
+                const char *src = (op == 0x89) ? pick_reg(w, op66, 0, info.rex, reg)
+                                               : pick_reg(w, op66, 0, info.rex, rm);
+                sb_printf(sb, "mov %s, %s", dst, src);
+                return info.length;
+            }
+            /* v1.6.0: memory form — mov reg, [r/m] / mov [r/m], reg. */
+            const char *rreg = pick_reg(w, op66, 0, info.rex, reg);
+            if (op == 0x89) {
+                /* dst is memory */
+                sb_printf(sb, "mov ");
+                render_rm_mem(sb, &info, buf);
+                sb_printf(sb, ", %s", rreg);
+            } else {
+                sb_printf(sb, "mov %s, ", rreg);
+                render_rm_mem(sb, &info, buf);
+            }
             return info.length;
         }
         if ((op == 0x31 || op == 0x33) && (info.modrm >> 6) == 3) {
@@ -212,16 +306,12 @@ static int emit_one(strbuf_t *sb, const uint8_t *buf, size_t max)
             sb_printf(sb, "add %s, %s", dst, src);
             return info.length;
         }
-        /* LEA r, [base+disp8]: 8D with mod=01, rm != 4, displacement 1 byte */
-        if (op == 0x8D && (info.modrm >> 6) == 1 && (info.modrm & 7) != 4) {
-            uint8_t reg = (info.modrm >> 3) & 7;
-            uint8_t rm  = info.modrm & 7;
-            int8_t  d8  = (int8_t)buf[info.length - 1];
-            sb_printf(sb, "lea %s, [%s%s0x%x]",
-                      pick_reg(w, op66, 0, info.rex, reg),
-                      pick_reg(1, 0, 0, info.rex, rm),
-                      d8 < 0 ? "-" : "+",
-                      d8 < 0 ? (unsigned)(-d8) : (unsigned)d8);
+        /* LEA r, [base+index*scale+disp] — full operand render now. */
+        if (op == 0x8D && (info.modrm >> 6) != 3) {
+            int rex_r   = (info.rex >> 2) & 1;
+            uint8_t reg = ((info.modrm >> 3) & 7) | (rex_r << 3);
+            sb_printf(sb, "lea %s, ", pick_reg(w, op66, 0, info.rex, reg));
+            render_rm_mem(sb, &info, buf);
             return info.length;
         }
         if (op == 0xF4) { sb_printf(sb, "hlt"); return info.length; }

@@ -3,6 +3,41 @@
 All notable changes to `shrike` are listed here. Project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] — 2026-04-18
+
+**x86-64 operand decoder — first pass.** Opens Stage IV
+(disassembler depth). Gadgets with memory operands now render
+with full addressing-mode detail instead of falling back to
+byte-dump.
+
+### Changes
+- `reg64` / `reg32` / `reg16` / `reg8_nohi` tables grown to 16
+  entries each so r8..r15 get proper names.
+- `pick_reg` indexes into the full 16-wide tables.
+- PUSH/POP for r8..r15 now render correctly (`push r12` instead
+  of `push rsp` that the index-masking used to produce under
+  REX.B).
+- New `render_rm_mem()` helper decodes any mod ∈ {00,01,10}
+  ModR/M + optional SIB into `[base + index*scale + disp]` form.
+  Handles RIP-relative (mod=0, rm=5), SIB-disp32, REX.B for
+  base high bit, REX.X for index high bit. 16-bit addressing
+  is out of scope (not a ROP target).
+- Opcodes upgraded from reg-only to full-operand:
+  - `mov reg, r/m` / `mov r/m, reg` (0x8B / 0x89)
+  - `lea reg, r/m` (0x8D)
+- Rest of the opcode table still uses the legacy reg-only path
+  for mod=3 and byte-dump for memory forms. Those patch bumps
+  land in v1.6.1 (SSE/AVX) + V3 Stage VII's semantic-depth
+  expansion.
+
+### Example
+Before: `lea rsp, [rbp-0x10]` rendered as `db 0x48, 0x8d, 0x65, 0xf0`.
+After: it renders as `lea rsp, [rbp-0x10]`. Stack pivot atlases
+read naturally now.
+
+Version bump 1.5.4 → 1.6.0 (minor — new output capability,
+additive).
+
 ## [1.5.4] — 2026-04-18
 
 **Automatic padding insertion (Stage III complete).** Subset-match
