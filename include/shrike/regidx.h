@@ -88,6 +88,19 @@ void regidx_print_python(const regidx_t *ri, FILE *f);
 const regidx_multi_t *regidx_find_multi_exact(const regidx_t *ri,
                                               uint32_t needed);
 
+/* v1.5.3: clobber-aware variant. Returns the first multi-pop
+ * gadget that covers every bit in `needed` and whose writes_mask
+ * shares no bits with `committed` (i.e. it cannot stomp on any
+ * already-set register). `strict_cover` selects between:
+ *   1 — exact match (same as regidx_find_multi_exact)
+ *   0 — subset cover allowed (gadget may write extra regs
+ *       beyond `needed`; those turn into padding slots)
+ * Returns NULL if nothing qualifies. */
+const regidx_multi_t *regidx_find_multi(const regidx_t *ri,
+                                        uint32_t needed,
+                                        uint32_t committed,
+                                        int      strict_cover);
+
 #ifdef __cplusplus
 }
 #endif

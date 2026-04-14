@@ -3,6 +3,38 @@
 All notable changes to `shrike` are listed here. Project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.3] — 2026-04-18
+
+**Clobber-aware gadget picker.** The chain resolver now tracks
+a `committed_mask` through the chain and refuses multi-pop
+gadgets that would stomp on a register already set by an
+earlier step. Prevents silent-breakage chains where e.g.
+`rax = 59` gets overwritten by a later `pop rax; pop rdi; ret`.
+
+### Changes
+- `regidx_find_multi(ri, needed, committed, strict_cover)`
+  generalises the v1.5.2 exact-match lookup. Returns the
+  smallest-popcount gadget that covers `needed` and shares no
+  bits with `committed`. `strict_cover=1` keeps exact-match
+  semantics; `=0` allows subset-cover (padding will follow in
+  v1.5.4).
+- `resolve_text` threads a `committed_mask` through the
+  statement loop. Every SET_REG (single or multi-pop) ORs its
+  target registers into the mask; multi-pop lookup consults it
+  via the new API.
+- Picker prefers the gadget with the smallest popcount when
+  several qualify — tighter chains, fewer padding slots once
+  v1.5.4 starts emitting them.
+
+### Not yet
+Subset-match + auto-padding is still v1.5.4 — `strict_cover` is
+hardcoded to 1 at the call site. Recipes that need three regs
+and find only a four-reg gadget still miss; that changes next
+sprint.
+
+Version bump 1.5.2 → 1.5.3 (additive; chains from v1.5.2 that
+were correct remain correct).
+
 ## [1.5.2] — 2026-04-18
 
 **Multi-pop permutation search.** The chain resolver now prefers

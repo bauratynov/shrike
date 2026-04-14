@@ -115,14 +115,20 @@ static int resolve_text(const recipe_t *r, const regidx_t *idx,
     fprintf(f, "# shrike chain from recipe  (arch: %s)\n", arch);
     fprintf(f, "# format: addr  note                         (one slot per line)\n");
 
+    /* v1.5.3: track registers already committed by earlier steps
+     * so we can refuse multi-pop gadgets that would clobber them
+     * with a fresh value. */
+    uint32_t committed = 0;
+
     for (int i = 0; i < r->n; i++) {
         const recipe_stmt_t *s = &r->stmts[i];
 
-        /* v1.5.2: before falling back to a single-pop gadget,
-         * check whether a contiguous run of SET_REG statements
-         * can be satisfied by one multi-pop gadget. Exact-match
-         * only — a gadget that pops (rdi, rsi, rdx) is chosen
-         * only if the recipe asks for exactly those three. */
+        /* v1.5.2 + v1.5.3: before falling back to a single-pop
+         * gadget, check whether a contiguous run of SET_REG
+         * statements can be satisfied by one multi-pop gadget.
+         * Exact match preferred; subset-cover acceptable when
+         * the extra registers don't collide with anything
+         * already committed (padding is emitted in v1.5.4). */
         if (s->op == RSTMT_SET_REG) {
             int run = 0;
             uint32_t needed = 0;
@@ -134,7 +140,7 @@ static int resolve_text(const recipe_t *r, const regidx_t *idx,
             }
             if (run >= 2) {
                 const regidx_multi_t *mp =
-                    regidx_find_multi_exact(idx, needed);
+                    regidx_find_multi(idx, needed, committed, /*strict=*/1);
                 if (mp) {
                     fprintf(f,
                         "0x%016" PRIx64 "  # multi-pop gadget  (stack: %u bytes)\n",
@@ -153,6 +159,7 @@ static int resolve_text(const recipe_t *r, const regidx_t *idx,
                                 rn);
                         }
                     }
+                    committed |= needed;
                     i += run - 1;   /* for-loop adds the last 1 */
                     continue;
                 }
@@ -173,6 +180,7 @@ static int resolve_text(const recipe_t *r, const regidx_t *idx,
             uint32_t stack  = idx->stack_consumed[s->reg][0];
             fprintf(f, "0x%016" PRIx64 "  # pop %s ; ret  (stack: %u bytes)\n",
                     g_addr, rn, (unsigned)stack);
+            committed |= 1u << s->reg;
             if (s->is_literal) {
                 fprintf(f, "0x%016" PRIx64 "  # %s = 0x%" PRIx64 "\n",
                         s->value, rn, s->value);

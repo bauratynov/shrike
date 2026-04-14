@@ -359,6 +359,29 @@ regidx_find_multi_exact(const regidx_t *ri, uint32_t needed)
     return NULL;
 }
 
+const regidx_multi_t *
+regidx_find_multi(const regidx_t *ri, uint32_t needed,
+                  uint32_t committed, int strict_cover)
+{
+    /* Prefer smaller writes_mask popcount — fewer padding slots,
+     * tighter chain. Stable order so outputs are reproducible. */
+    const regidx_multi_t *best = NULL;
+    int best_pop = 0;
+
+    for (uint16_t i = 0; i < ri->multi_count; i++) {
+        const regidx_multi_t *m = &ri->multi[i];
+        if ((m->writes_mask & needed) != needed) continue;
+        if ((m->writes_mask & committed) != 0) continue;
+        if (strict_cover && m->writes_mask != needed) continue;
+        int pop = popcount32(m->writes_mask);
+        if (!best || pop < best_pop) {
+            best = m;
+            best_pop = pop;
+        }
+    }
+    return best;
+}
+
 static int regidx_nregs(uint16_t machine)
 {
     if (machine == EM_AARCH64) return 32;
