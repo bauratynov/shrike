@@ -3,6 +3,42 @@
 All notable changes to `shrike` are listed here. Project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.2] — 2026-04-18
+
+**Multi-pop permutation search.** The chain resolver now prefers
+a single multi-pop gadget over N single-pops when it can satisfy
+several recipe registers at once. Output chains are shorter,
+easier to ASLR-align, and eat less stack.
+
+### Changes
+- `regidx_t` grows `multi[REGIDX_MAX_MULTI]` — every gadget with
+  popcount(writes_mask) ≥ 2 (and a RET terminator) lands here
+  alongside its `writes_mask`, `addr`, `stack_consumed`.
+- `regidx_find_multi_exact(ri, mask)` returns the first gadget
+  whose mask exactly matches `mask`. Exact match (not cover)
+  keeps v1.5.2 tight — subset-match with padding is v1.5.4.
+- `resolve_text` in `recipe.c`: before falling back to per-reg
+  gadgets, it scans forward across a contiguous run of SET_REG
+  statements, builds the `needed` mask, and queries the multi
+  index. On hit, emits one gadget line + N value lines;
+  otherwise falls back to the existing single-pop per register
+  path.
+- Recipe example: `--recipe 'rdi=*; rsi=*; rdx=*; rax=59; syscall'`
+  on a binary containing `pop rdi ; pop rsi ; pop rdx ; ret`
+  now emits two gadget lines (the multi-pop + the syscall)
+  instead of four.
+
+### Not yet
+- No clobber-aware filtering: picked multi-pop still wins even
+  if it happens to clobber an already-committed register from
+  an earlier step. That's v1.5.3.
+- No subset-match / auto-padding: `pop rdi ; pop rsi ; pop rdx
+  ; pop r15 ; ret` won't satisfy a three-reg recipe even though
+  it could. That's v1.5.4.
+
+Version bump 1.5.1 → 1.5.2 (additive; v1.x single-pop chains
+remain valid output when no multi-pop is available).
+
 ## [1.5.1] — 2026-04-18
 
 **Stack-slot accounting in the recipe emitter.** Every gadget

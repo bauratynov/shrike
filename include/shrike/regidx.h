@@ -26,8 +26,20 @@
 extern "C" {
 #endif
 
-#define REGIDX_MAX_REGS 32
-#define REGIDX_MAX_PER  64   /* addresses per register we remember */
+#define REGIDX_MAX_REGS  32
+#define REGIDX_MAX_PER   64   /* addresses per register we remember */
+#define REGIDX_MAX_MULTI 256  /* v1.5.2: multi-pop gadget slots */
+
+/* v1.5.2: every gadget that writes 2+ registers in one execution
+ * gets an entry here. The chain resolver looks through this list
+ * when a recipe asks for several registers in a row — a single
+ * multi-pop gadget is always preferred over N single-pops
+ * (shorter chain, easier ASLR survivability, less stack). */
+typedef struct {
+    uint32_t writes_mask;      /* bit N set means "writes reg N" */
+    uint32_t stack_consumed;
+    uint64_t addr;
+} regidx_multi_t;
 
 typedef struct {
     uint64_t   addrs[REGIDX_MAX_REGS][REGIDX_MAX_PER];
@@ -41,6 +53,10 @@ typedef struct {
     /* terminator helpers */
     uint64_t   syscall_addrs[REGIDX_MAX_PER];
     uint16_t   syscall_count;
+
+    /* v1.5.2: multi-pop index. */
+    regidx_multi_t multi[REGIDX_MAX_MULTI];
+    uint16_t       multi_count;
 } regidx_t;
 
 void regidx_init(regidx_t *ri, uint16_t machine);
@@ -63,6 +79,14 @@ void regidx_print_json(const regidx_t *ri, FILE *f);
 
 /* pwntools-compatible Python dict literal. */
 void regidx_print_python(const regidx_t *ri, FILE *f);
+
+/* v1.5.2: find a multi-pop gadget whose writes_mask equals the
+ * requested `needed` mask exactly. Returns a pointer into the
+ * regidx or NULL if no such gadget was observed. Exact match
+ * (not cover) keeps this sprint scope tight — subset-match with
+ * padding is v1.5.4's job. */
+const regidx_multi_t *regidx_find_multi_exact(const regidx_t *ri,
+                                              uint32_t needed);
 
 #ifdef __cplusplus
 }

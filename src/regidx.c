@@ -116,6 +116,23 @@ regidx_credit(regidx_t *ri, int r, uint64_t addr, uint32_t stack)
     ri->stack_consumed[r][idx] = stack;
 }
 
+/* v1.5.2: record a multi-pop gadget (writes_mask popcount >= 2).
+ * Duplicates (same mask + addr) are ignored. */
+static void
+regidx_credit_multi(regidx_t *ri, uint32_t mask, uint64_t addr,
+                    uint32_t stack)
+{
+    if (ri->multi_count >= REGIDX_MAX_MULTI) return;
+    for (uint16_t i = 0; i < ri->multi_count; i++) {
+        if (ri->multi[i].addr == addr && ri->multi[i].writes_mask == mask)
+            return;
+    }
+    regidx_multi_t *m = &ri->multi[ri->multi_count++];
+    m->writes_mask    = mask;
+    m->stack_consumed = stack;
+    m->addr           = addr;
+}
+
 static int is_x86_ret(uint8_t b) { return b == 0xC3; }
 
 static void observe_x86(regidx_t *ri, const gadget_t *g)
@@ -296,6 +313,17 @@ static void observe_rv(regidx_t *ri, const gadget_t *g)
     }
 }
 
+/* popcount over a 32-bit writes_mask. Tiny and portable — no
+ * need to reach for __builtin_popcount on a hot path we hit
+ * once per observed gadget. */
+static int
+popcount32(uint32_t x)
+{
+    int n = 0;
+    while (x) { x &= x - 1; n++; }
+    return n;
+}
+
 void regidx_observe(regidx_t *ri, const gadget_t *g)
 {
     if (!ri || !g || g->length == 0) return;
@@ -308,6 +336,27 @@ void regidx_observe(regidx_t *ri, const gadget_t *g)
     if (g->machine == EM_AARCH64)      observe_a64(ri, g);
     else if (g->machine == EM_RISCV)   observe_rv(ri, g);
     else                               observe_x86(ri, g);
+
+    /* v1.5.2: gadgets whose effect covers multiple registers go
+     * into the multi-pop index. Only record plain RET-terminated
+     * gadgets — anything else would change the synthesizer's
+     * control-flow assumptions. */
+    gadget_effect_t ef;
+    gadget_effect_compute(g, &ef);
+    if (ef.terminator == GADGET_TERM_RET &&
+        popcount32(ef.writes_mask) >= 2) {
+        regidx_credit_multi(ri, ef.writes_mask, g->vaddr,
+                            ef.stack_consumed);
+    }
+}
+
+const regidx_multi_t *
+regidx_find_multi_exact(const regidx_t *ri, uint32_t needed)
+{
+    for (uint16_t i = 0; i < ri->multi_count; i++) {
+        if (ri->multi[i].writes_mask == needed) return &ri->multi[i];
+    }
+    return NULL;
 }
 
 static int regidx_nregs(uint16_t machine)

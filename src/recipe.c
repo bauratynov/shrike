@@ -118,6 +118,47 @@ static int resolve_text(const recipe_t *r, const regidx_t *idx,
     for (int i = 0; i < r->n; i++) {
         const recipe_stmt_t *s = &r->stmts[i];
 
+        /* v1.5.2: before falling back to a single-pop gadget,
+         * check whether a contiguous run of SET_REG statements
+         * can be satisfied by one multi-pop gadget. Exact-match
+         * only — a gadget that pops (rdi, rsi, rdx) is chosen
+         * only if the recipe asks for exactly those three. */
+        if (s->op == RSTMT_SET_REG) {
+            int run = 0;
+            uint32_t needed = 0;
+            for (int k = i; k < r->n && r->stmts[k].op == RSTMT_SET_REG; k++) {
+                if (r->stmts[k].reg < 0 ||
+                    r->stmts[k].reg >= REGIDX_MAX_REGS) break;
+                needed |= 1u << r->stmts[k].reg;
+                run++;
+            }
+            if (run >= 2) {
+                const regidx_multi_t *mp =
+                    regidx_find_multi_exact(idx, needed);
+                if (mp) {
+                    fprintf(f,
+                        "0x%016" PRIx64 "  # multi-pop gadget  (stack: %u bytes)\n",
+                        mp->addr, (unsigned)mp->stack_consumed);
+                    for (int k = i; k < i + run; k++) {
+                        const recipe_stmt_t *sk = &r->stmts[k];
+                        const char *rn =
+                            regidx_reg_name(machine, sk->reg);
+                        if (sk->is_literal) {
+                            fprintf(f,
+                                "0x%016" PRIx64 "  # %s = 0x%" PRIx64 "\n",
+                                sk->value, rn, sk->value);
+                        } else {
+                            fprintf(f,
+                                "<value>            # %s (fill at exploit time)\n",
+                                rn);
+                        }
+                    }
+                    i += run - 1;   /* for-loop adds the last 1 */
+                    continue;
+                }
+            }
+        }
+
         if (s->op == RSTMT_SET_REG) {
             const char *rn = regidx_reg_name(machine, s->reg);
             if (!rn) { missing++; continue; }
