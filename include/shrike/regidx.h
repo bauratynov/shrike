@@ -35,10 +35,17 @@ extern "C" {
  * when a recipe asks for several registers in a row — a single
  * multi-pop gadget is always preferred over N single-pops
  * (shorter chain, easier ASLR survivability, less stack). */
+#define REGIDX_MAX_POP_ORDER 16
+
 typedef struct {
     uint32_t writes_mask;      /* bit N set means "writes reg N" */
     uint32_t stack_consumed;
     uint64_t addr;
+    /* v1.5.4: ordered list of popped registers, in the order they
+     * appear on the stack. Needed for auto-padding so the emitter
+     * knows which slots correspond to recipe registers vs filler. */
+    uint8_t  pop_order[REGIDX_MAX_POP_ORDER];
+    uint8_t  pop_count;
 } regidx_multi_t;
 
 typedef struct {

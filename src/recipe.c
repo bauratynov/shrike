@@ -139,28 +139,57 @@ static int resolve_text(const recipe_t *r, const regidx_t *idx,
                 run++;
             }
             if (run >= 2) {
+                /* Try exact match first — tightest possible chain.
+                 * Fall back to subset-cover with padding if nothing
+                 * exact is available (v1.5.4). */
                 const regidx_multi_t *mp =
                     regidx_find_multi(idx, needed, committed, /*strict=*/1);
+                int subset = 0;
+                if (!mp) {
+                    mp = regidx_find_multi(idx, needed, committed, 0);
+                    if (mp) subset = 1;
+                }
                 if (mp) {
                     fprintf(f,
-                        "0x%016" PRIx64 "  # multi-pop gadget  (stack: %u bytes)\n",
-                        mp->addr, (unsigned)mp->stack_consumed);
-                    for (int k = i; k < i + run; k++) {
-                        const recipe_stmt_t *sk = &r->stmts[k];
-                        const char *rn =
-                            regidx_reg_name(machine, sk->reg);
-                        if (sk->is_literal) {
+                        "0x%016" PRIx64 "  # %s-pop gadget  (stack: %u bytes)\n",
+                        mp->addr,
+                        subset ? "subset" : "multi",
+                        (unsigned)mp->stack_consumed);
+                    /* Walk the gadget's ordered pop list. For each
+                     * popped register, emit either the recipe's
+                     * value for that register (if requested) or a
+                     * 0xdeadbeef padding slot (if this gadget
+                     * covers extra registers beyond `needed`). */
+                    for (int pi = 0; pi < mp->pop_count; pi++) {
+                        int reg = mp->pop_order[pi];
+                        int matched = 0;
+                        for (int k = i; k < i + run; k++) {
+                            const recipe_stmt_t *sk = &r->stmts[k];
+                            if (sk->reg != reg) continue;
+                            const char *rn =
+                                regidx_reg_name(machine, reg);
+                            if (sk->is_literal) {
+                                fprintf(f,
+                                    "0x%016" PRIx64 "  # %s = 0x%" PRIx64 "\n",
+                                    sk->value, rn, sk->value);
+                            } else {
+                                fprintf(f,
+                                    "<value>            # %s (fill at exploit time)\n",
+                                    rn);
+                            }
+                            matched = 1;
+                            break;
+                        }
+                        if (!matched) {
+                            const char *rn =
+                                regidx_reg_name(machine, reg);
                             fprintf(f,
-                                "0x%016" PRIx64 "  # %s = 0x%" PRIx64 "\n",
-                                sk->value, rn, sk->value);
-                        } else {
-                            fprintf(f,
-                                "<value>            # %s (fill at exploit time)\n",
-                                rn);
+                                "0x00000000deadbeef  # %s (padding, gadget covers extra)\n",
+                                rn ? rn : "???");
                         }
                     }
                     committed |= needed;
-                    i += run - 1;   /* for-loop adds the last 1 */
+                    i += run - 1;
                     continue;
                 }
             }

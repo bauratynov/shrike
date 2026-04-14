@@ -117,10 +117,13 @@ regidx_credit(regidx_t *ri, int r, uint64_t addr, uint32_t stack)
 }
 
 /* v1.5.2: record a multi-pop gadget (writes_mask popcount >= 2).
- * Duplicates (same mask + addr) are ignored. */
+ * Duplicates (same mask + addr) are ignored.
+ * v1.5.4: also carry the ordered pop list so the emitter can
+ * thread values into the right stack slots and 0xdeadbeef the
+ * rest when the gadget covers more regs than the recipe needs. */
 static void
 regidx_credit_multi(regidx_t *ri, uint32_t mask, uint64_t addr,
-                    uint32_t stack)
+                    uint32_t stack, const int *order, int order_count)
 {
     if (ri->multi_count >= REGIDX_MAX_MULTI) return;
     for (uint16_t i = 0; i < ri->multi_count; i++) {
@@ -131,6 +134,10 @@ regidx_credit_multi(regidx_t *ri, uint32_t mask, uint64_t addr,
     m->writes_mask    = mask;
     m->stack_consumed = stack;
     m->addr           = addr;
+    int n = order_count > REGIDX_MAX_POP_ORDER
+          ? REGIDX_MAX_POP_ORDER : order_count;
+    for (int i = 0; i < n; i++) m->pop_order[i] = (uint8_t)order[i];
+    m->pop_count = (uint8_t)n;
 }
 
 static int is_x86_ret(uint8_t b) { return b == 0xC3; }
@@ -170,6 +177,12 @@ static void observe_x86(regidx_t *ri, const gadget_t *g)
 
     for (int i = 0; i < n_regs; i++) {
         regidx_credit(ri, regs[i], g->vaddr, ef.stack_consumed);
+    }
+    if (n_regs >= 2) {
+        uint32_t mask = 0;
+        for (int i = 0; i < n_regs; i++) mask |= 1u << regs[i];
+        regidx_credit_multi(ri, mask, g->vaddr, ef.stack_consumed,
+                            regs, n_regs);
     }
 }
 
@@ -229,6 +242,12 @@ static void observe_a64(regidx_t *ri, const gadget_t *g)
 
     for (int i = 0; i < n_regs; i++) {
         regidx_credit(ri, regs[i], g->vaddr, ef.stack_consumed);
+    }
+    if (n_regs >= 2) {
+        uint32_t mask = 0;
+        for (int i = 0; i < n_regs; i++) mask |= 1u << regs[i];
+        regidx_credit_multi(ri, mask, g->vaddr, ef.stack_consumed,
+                            regs, n_regs);
     }
 }
 
@@ -311,6 +330,12 @@ static void observe_rv(regidx_t *ri, const gadget_t *g)
     for (int i = 0; i < n_regs; i++) {
         regidx_credit(ri, regs[i], g->vaddr, ef.stack_consumed);
     }
+    if (n_regs >= 2) {
+        uint32_t mask = 0;
+        for (int i = 0; i < n_regs; i++) mask |= 1u << regs[i];
+        regidx_credit_multi(ri, mask, g->vaddr, ef.stack_consumed,
+                            regs, n_regs);
+    }
 }
 
 /* popcount over a 32-bit writes_mask. Tiny and portable — no
@@ -336,18 +361,6 @@ void regidx_observe(regidx_t *ri, const gadget_t *g)
     if (g->machine == EM_AARCH64)      observe_a64(ri, g);
     else if (g->machine == EM_RISCV)   observe_rv(ri, g);
     else                               observe_x86(ri, g);
-
-    /* v1.5.2: gadgets whose effect covers multiple registers go
-     * into the multi-pop index. Only record plain RET-terminated
-     * gadgets — anything else would change the synthesizer's
-     * control-flow assumptions. */
-    gadget_effect_t ef;
-    gadget_effect_compute(g, &ef);
-    if (ef.terminator == GADGET_TERM_RET &&
-        popcount32(ef.writes_mask) >= 2) {
-        regidx_credit_multi(ri, ef.writes_mask, g->vaddr,
-                            ef.stack_consumed);
-    }
 }
 
 const regidx_multi_t *

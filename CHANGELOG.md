@@ -3,6 +3,44 @@
 All notable changes to `shrike` are listed here. Project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.4] — 2026-04-18
+
+**Automatic padding insertion (Stage III complete).** Subset-match
+enabled: when a recipe asks for e.g. `{rdi, rsi, rdx}` and the
+best available gadget is `pop rdi ; pop rsi ; pop rdx ; pop r15
+; ret`, the resolver uses it and emits a `0xdeadbeef` padding
+slot for the extra `r15`.
+
+### Changes
+- `regidx_multi_t` grows `pop_order[REGIDX_MAX_POP_ORDER]` +
+  `pop_count` — the textual (= stack) order of the popped
+  registers. Populated by each per-arch observer from the
+  `regs[]` list they already built.
+- `regidx_credit_multi` takes the ordered array alongside the
+  mask. Observer collects regs[] in stack order and hands both
+  over in one call.
+- `resolve_text` recipe emitter: exact-match is tried first;
+  if nothing matches, it falls back to subset-match via
+  `regidx_find_multi(strict_cover=0)`. When a subset gadget is
+  used, the emitter walks `pop_order` and emits either the
+  recipe's value for that register or a `0xdeadbeef` padding
+  slot labelled with the covered register's name.
+- Gadget header line now distinguishes "multi-pop" (exact) from
+  "subset-pop" (has padding) so chain readers can see what's
+  going on at a glance.
+
+### Stage III — complete
+Four sprints (v1.5.0 gadget effect IR → v1.5.1 stack-slot
+accounting → v1.5.2 multi-pop permutation → v1.5.3 clobber graph
+→ v1.5.4 subset-cover padding) shipped. The chain synthesizer
+now picks the smallest-footprint gadget sequence that satisfies
+a recipe without clobbering already-committed registers. Stage
+IV (disassembler depth) starts at v1.6.0.
+
+Version bump 1.5.3 → 1.5.4 (additive; recipes that resolved
+before still resolve the same way unless a better subset gadget
+exists).
+
 ## [1.5.3] — 2026-04-18
 
 **Clobber-aware gadget picker.** The chain resolver now tracks
