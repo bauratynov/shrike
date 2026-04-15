@@ -3,6 +3,50 @@
 All notable changes to `shrike` are listed here. Project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.0] — 2026-04-18
+
+**Python bindings.** Stage V opens. `python/shrike/` wraps the
+shrike CLI in a subprocess and parses JSON-Lines into a dict
+stream; the module works anywhere Python 3.8+ runs and a
+`shrike` binary is on `$PATH`.
+
+### Changes
+- New `python/shrike/__init__.py` + `python/shrike/cli.py`:
+  - `scan(path, **filters)` — generator of gadget dicts.
+  - `scan_raw(path, arch=, base=)` — headerless blob scan.
+  - `recipe(path, recipe_src, fmt=)` — return composer output.
+  - `reg_index(path, python=)` — dict-of-lists from
+    `--reg-index --reg-index-json` (or the Python-dict emitter
+    on request).
+  - `version()` / `DEFAULT_BINARY` / `ShrikeError` — lifecycle
+    helpers.
+- `SHRIKE_BINARY` env var overrides which binary is invoked.
+  Wheels built in v1.7.1 will point this at the bundled
+  executable.
+- Errors surface as `ShrikeError` — never silent. Exit code 2
+  (bad invocation) is treated as an error; exit code 1
+  (runtime failure) surfaces stderr.
+- `python/README.md` documents why the first bindings are
+  subprocess-based rather than ctypes — the v1.x C API is
+  deliberately not frozen, so direct-library binding waits for
+  v2.0.0's stable API sprint.
+
+### Example
+
+```python
+import shrike
+for g in shrike.scan("/bin/ls", category=["pop"]):
+    print(g["addr"], g["insns"])
+```
+
+### Not yet
+- No PyPI publish — the wheel + `setup.py` lands in v1.7.1.
+- No ctypes fast path — that's a v2.0.0 item once the C API
+  is stable.
+
+Version bump 1.6.2 → 1.7.0 (minor — new distribution target,
+additive).
+
 ## [1.6.2] — 2026-04-18
 
 **AArch64 expanded coverage (Stage IV complete).** arm64.c goes
