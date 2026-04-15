@@ -105,6 +105,56 @@ jobs:
           # Confirm we actually dynamically linked, not statically.
           ldd /tmp/consumer | grep libshrike.so.1
 
+  cross-arch:
+    name: cross-arch matrix (${{ matrix.arch }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: aarch64
+            cc:   aarch64-linux-gnu-gcc
+            pkg:  gcc-aarch64-linux-gnu
+          - arch: riscv64
+            cc:   riscv64-linux-gnu-gcc
+            pkg:  gcc-riscv64-linux-gnu
+          - arch: pe-x86_64
+            cc:   x86_64-w64-mingw32-gcc
+            pkg:  gcc-mingw-w64-x86-64
+    steps:
+      - uses: actions/checkout@v4
+      - name: install cross-compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ${{ matrix.pkg }}
+      - name: build shrike (native)
+        run: make
+      - name: compile target for ${{ matrix.arch }}
+        run: |
+          cat > /tmp/target.c <<'EOF'
+          #include <stdio.h>
+          int main(int argc, char **argv) {
+              (void)argc; (void)argv;
+              puts("hello from the target binary");
+              return 0;
+          }
+          EOF
+          ${{ matrix.cc }} -O2 -o /tmp/target /tmp/target.c
+          file /tmp/target
+      - name: scan with shrike
+        run: |
+          ./shrike --quiet /tmp/target
+          n=$(./shrike --quiet /tmp/target 2>&1 | grep 'emitted' | \
+                awk '{for(i=1;i<=NF;i++)if($i=="emitted")print $(i-1)}')
+          echo "${{ matrix.arch }}: $n gadgets emitted"
+          if [ -z "$n" ] || [ "$n" -lt 1 ]; then
+              echo "FAIL: shrike found no gadgets in the ${{ matrix.arch }} target"
+              exit 1
+          fi
+      - name: scan with --json
+        run: |
+          ./shrike --json --quiet /tmp/target | head -3
+
   python-wheel:
     name: Python wheel + import smoke
     runs-on: ubuntu-24.04

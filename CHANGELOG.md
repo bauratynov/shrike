@@ -3,6 +3,41 @@
 All notable changes to `shrike` are listed here. Project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.0] — 2026-04-18
+
+**Cross-arch CI matrix.** Opens Stage VI (polish + v2 release
+prep). CI now cross-compiles a tiny target program for aarch64,
+riscv64, and PE x86-64, then runs shrike against each and
+asserts gadget output. Catches regressions in the PE / Mach-O /
+RV64 loaders the moment they happen, not at the next release.
+
+### Changes
+- `.github/workflows/ci.yml` grows a `cross-arch` matrix job
+  with one entry per new architecture added since 1.0:
+  - `aarch64-linux-gnu-gcc` → ELF aarch64
+  - `riscv64-linux-gnu-gcc` → ELF RV64
+  - `x86_64-w64-mingw32-gcc` → PE x86-64
+- Build target: a minimal hello-world `.c`. Shrike runs against
+  the resulting binary; the job fails if fewer than 1 gadget
+  surfaces. Also asserts `--json` output parses (at least
+  three lines emitted).
+- Mach-O is intentionally absent — no reliable cross-compiler
+  for Darwin in an Ubuntu runner. Integration tests against
+  real .dylib fixtures happen in the Darwin runner job that
+  v1.9.0 will add.
+
+### Why this matters
+Up through v1.7.1, only the native x86-64 Linux path was
+integration-tested. The new archs relied on synthetic unit
+tests (test_pe.c / test_macho.c / test_riscv.c) which catch
+parser bugs but not "does the whole pipeline emit sensible
+gadgets on a real binary produced by a real compiler?" — the
+kind of integration the v1.0 line ran via `tests/integration.sh`
+on x86-64.
+
+Version bump 1.7.1 → 1.8.0 (minor — new CI capability, no
+runtime changes).
+
 ## [1.7.1] — 2026-04-18
 
 **PyPI packaging (Stage V complete).** `python/` is now a proper
