@@ -105,6 +105,27 @@ jobs:
           # Confirm we actually dynamically linked, not statically.
           ldd /tmp/consumer | grep libshrike.so.1
 
+  python-wheel:
+    name: Python wheel + import smoke
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: install build backend
+        run: pip install build setuptools wheel
+      - name: build wheel
+        run: |
+          cd python
+          python -m build --wheel --outdir dist/
+          ls dist/
+      - name: smoke — module imports without binary present
+        run: |
+          cd python
+          pip install dist/*.whl
+          python tests/test_import.py
+
   sanitizers:
     name: ASan + UBSan
     runs-on: ubuntu-24.04

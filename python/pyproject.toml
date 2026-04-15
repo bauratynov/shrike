@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "shrike-py"
+version = "1.7.1"
+description = "Python bindings for the shrike ROP gadget scanner"
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+authors = [
+  { name = "Baurzhan Atynov", email = "bauratynov@gmail.com" }
+]
+keywords = ["security", "rop", "exploitation", "reverse-engineering",
+            "binary-analysis", "pwntools"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Information Technology",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.8",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Security",
+  "Topic :: Software Development :: Disassemblers",
+]
+
+[project.urls]
+Homepage      = "https://github.com/bauratynov/shrike"
+Repository    = "https://github.com/bauratynov/shrike"
+Issues        = "https://github.com/bauratynov/shrike/issues"
+Documentation = "https://github.com/bauratynov/shrike/blob/main/README.md"
+Changelog     = "https://github.com/bauratynov/shrike/blob/main/CHANGELOG.md"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["shrike*"]

@@ -3,6 +3,36 @@
 All notable changes to `shrike` are listed here. Project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.1] — 2026-04-18
+
+**PyPI packaging (Stage V complete).** `python/` is now a proper
+Python package with `pyproject.toml`, `setup.cfg`, and import
+smoke tests. CI builds the wheel on every push so downstream
+consumers can `pip install shrike-py` from a GitHub Release.
+
+### Changes
+- `python/pyproject.toml` — PEP-621 project metadata, setuptools
+  backend, classifiers, PyPI URLs. Version pinned at 1.7.1 to
+  track the CLI.
+- `python/setup.cfg` — minimal metadata for older pip / editable
+  installs.
+- `python/tests/test_import.py` — smoke tests: module loads,
+  public API is the documented shape, `ShrikeError` is a
+  `RuntimeError` subclass. Doesn't require a `shrike` binary
+  on `$PATH` — binary-dependent tests live behind a
+  `@pytest.mark.needs_binary` guard in later sprints.
+- CI job `python-wheel`: builds via `python -m build` and runs
+  the import smoke on the installed wheel. Wheel artefact is
+  available from the run summary; a later release job uploads
+  to PyPI when the tag is signed.
+
+### Stage V — complete
+v1.7.0 (subprocess wrapper) + v1.7.1 (PyPI packaging) shipped.
+Stage VI (polish + v2.0 release prep) opens at v1.8.0.
+
+Version bump 1.7.0 → 1.7.1 (additive — package layout only,
+import API unchanged).
+
 ## [1.7.0] — 2026-04-18
 
 **Python bindings.** Stage V opens. `python/shrike/` wraps the
