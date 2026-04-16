@@ -102,7 +102,7 @@ jobs:
              -o /tmp/consumer
           /tmp/consumer
           # Confirm we actually dynamically linked, not statically.
-          ldd /tmp/consumer | grep libshrike.so.1
+          ldd /tmp/consumer | grep -E 'libshrike\.so\.[0-9]+'
 
   cross-arch:
     name: cross-arch matrix (${{ matrix.arch }})
