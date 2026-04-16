@@ -3,6 +3,44 @@
 All notable changes to `shrike` are listed here. Project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] — 2026-04-18
+
+**Per-instruction effect IR.** First V3 sprint (Stage VII opens).
+`<shrike/insn_effect.h>` carries a typed effect record for a
+single instruction — the unit the future symbolic execution
+backend and chain-correctness SMT prover will consume.
+
+### Changes
+- `include/shrike/insn_effect.h` defines `insn_effect_t`:
+  - `reads_mask` / `writes_mask` — 32-bit reg bitmasks, same
+    numbering as regidx.
+  - `stack_delta` — signed bytes (positive = pop, negative =
+    push).
+  - `flags` — `MEM_READ` / `MEM_WRITE` / `KNOWN` bits.
+  - `terminator` — `gadget_term_t` (NONE / RET / SYSCALL /
+    JMP_REG / CALL_REG / INT).
+  - `length` — decoded size in bytes (lets callers step
+    forward without a second call to xdec/riscv_insn_len).
+- `insn_effect_decode(bytes, remaining, machine, &out)`
+  dispatches to arch-specific decoders. Recognised shapes:
+  - **x86-64**: pop reg (±REX.B), push reg, ret, ret imm16,
+    syscall, int3.
+  - **aarch64**: ldp post-index, ret/svc/brk/br/blr
+    terminators.
+  - **RV64**: ld/c.ldsp from sp, addi sp, ecall/ebreak/ret/
+    c.jr/c.jalr.
+- Returns -1 with a zeroed record on unknown shapes so callers
+  can either bail or compose more carefully.
+
+### What this unlocks
+- v2.1.1 tiny bit-vector symbolic executor over insn_effect_t
+  chains (the research agent's 500-LOC budget).
+- v2.6.0 SMT proof emission — each insn's effect translates
+  cleanly to SMT2 assertions.
+
+Version bump 2.0.0 → 2.1.0 (additive — new header, no 2.0
+contract changes).
+
 ## [2.0.0] — 2026-04-18
 
 **Second stable release — stable C API + shared library.**
