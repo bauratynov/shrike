@@ -111,6 +111,40 @@ static void test_rv_ecall(void)
     CHECK(e.has_syscall == 1);
 }
 
+/* v2.1.1 — composed walker must match gadget_effect_compute for
+ * the shapes both of them recognise. */
+static void test_compose_matches(void)
+{
+    struct {
+        const uint8_t *bytes;
+        size_t len;
+        uint16_t machine;
+        const char *label;
+    } cases[] = {
+        { (const uint8_t *)"\x5f\xc3",           2, EM_X86_64, "pop rdi; ret" },
+        { (const uint8_t *)"\x5f\x5e\x5a\xc3",   4, EM_X86_64, "3x pop; ret" },
+        { (const uint8_t *)"\x0f\x05",           2, EM_X86_64, "syscall" },
+        { (const uint8_t *)"\x41\x5c\xc3",       3, EM_X86_64, "pop r12; ret" },
+        { (const uint8_t *)"\x67\x80\x00\x00",   4, EM_RISCV,  "rv ret" },
+        { (const uint8_t *)"\x73\x00\x00\x00",   4, EM_RISCV,  "rv ecall" },
+    };
+    for (size_t i = 0; i < sizeof cases / sizeof cases[0]; i++) {
+        gadget_t g = {0};
+        g.bytes = cases[i].bytes;
+        g.length = cases[i].len;
+        g.machine = cases[i].machine;
+
+        gadget_effect_t a, b;
+        CHECK(gadget_effect_compute(&g, &a) == 0);
+        int n = gadget_effect_compose(&g, &b);
+        CHECK(n >= 1);
+        CHECK(a.writes_mask == b.writes_mask);
+        CHECK(a.terminator == b.terminator);
+        CHECK(a.stack_consumed == b.stack_consumed);
+        CHECK(a.has_syscall == b.has_syscall);
+    }
+}
+
 int
 main(void)
 {
@@ -120,6 +154,7 @@ main(void)
     test_x86_pop_r12_ret();
     test_rv_ret();
     test_rv_ecall();
+    test_compose_matches();
 
     if (fails == 0) {
         printf("test_effect: ok\n");

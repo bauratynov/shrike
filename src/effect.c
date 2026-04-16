@@ -21,6 +21,7 @@
  */
 
 #include <shrike/effect.h>
+#include <shrike/insn_effect.h>
 #include <shrike/format.h>
 #include <shrike/elf64.h>
 #include <shrike/arm64.h>
@@ -254,4 +255,60 @@ gadget_effect_compute(const gadget_t *g, gadget_effect_t *out)
     if (g->machine == EM_AARCH64) return compute_a64(g, out);
     if (g->machine == EM_RISCV)   return compute_rv(g, out);
     return compute_x86(g, out);
+}
+
+/* v2.1.1: compositional walk. Calls insn_effect_decode once per
+ * instruction and merges the per-insn record into the gadget
+ * total:
+ *   - reads:  set the first time any instruction reads a reg,
+ *             but *only before* that reg has been written by
+ *             an earlier instruction in the same gadget (so the
+ *             first write hides future reads from the total).
+ *   - writes: union of all write masks.
+ *   - stack_consumed: sum of per-insn stack_delta (clamped at
+ *             0 — negative deltas flag a pivot instead).
+ *   - terminator: taken from the last insn that has one set.
+ *   - has_syscall: terminator == GADGET_TERM_SYSCALL.
+ */
+int
+gadget_effect_compose(const gadget_t *g, gadget_effect_t *out)
+{
+    memset(out, 0, sizeof *out);
+    if (!g || g->length == 0) return 0;
+
+    size_t pos = 0;
+    int count = 0;
+    int32_t stack = 0;
+
+    while (pos < g->length) {
+        insn_effect_t ie;
+        int n = insn_effect_decode(g->bytes + pos, g->length - pos,
+                                   g->machine, &ie);
+        if (n <= 0) return -1;
+        if ((ie.flags & INSN_EFFECT_KNOWN) == 0) return -1;
+
+        /* Reads before first write hide behind later writes. */
+        uint32_t new_reads = ie.reads_mask & ~out->writes_mask;
+        out->reads_mask  |= new_reads;
+        out->writes_mask |= ie.writes_mask;
+        stack            += ie.stack_delta;
+
+        if (ie.terminator != GADGET_TERM_NONE) {
+            out->terminator = ie.terminator;
+            if (ie.terminator == GADGET_TERM_SYSCALL) {
+                out->has_syscall = 1;
+            }
+        }
+
+        pos += (size_t)n;
+        count++;
+        /* Stop at the first terminator — chain synthesizer
+         * only cares about effect up to control-flow exit. */
+        if (ie.terminator != GADGET_TERM_NONE) break;
+    }
+
+    if (stack > 0) out->stack_consumed = (uint32_t)stack;
+    else if (stack < 0) out->is_pivot  = 1;
+
+    return count;
 }

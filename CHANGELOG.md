@@ -3,6 +3,41 @@
 All notable changes to `shrike` are listed here. Project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.1] — 2026-04-18
+
+**Effect composer.** `gadget_effect_compose()` walks a gadget
+via the v2.1.0 `insn_effect_decode` and folds per-instruction
+effects into the gadget total. Same output as
+`gadget_effect_compute` for shapes both recognise; the new
+function is the basis for the v2.6.0 SMT chain-correctness
+prover, where per-insn assertions must line up with the gadget
+postcondition.
+
+### Changes
+- `gadget_effect_compose(g, &out)` new entry point:
+  - reads before first write hide behind later writes (x86
+    calling convention modelling)
+  - writes are union of per-insn writes
+  - stack_consumed is signed sum (clamped at 0; negative →
+    `is_pivot`)
+  - terminator taken from the last insn that reports one;
+    composition stops there
+  - returns instruction count on success, -1 if any insn
+    couldn't be decoded (or lacked the `KNOWN` flag)
+- `gadget_effect_compute` unchanged — the two functions agree
+  on the gadget shapes both understand.
+- `test_effect.c` grows `test_compose_matches` — verifies
+  agreement on 6 fixture byte sequences spanning x86 and RV64.
+
+### What this is for
+- v2.1.2 JOP / v2.1.3 COP classifiers need per-insn effects to
+  distinguish dispatcher gadgets from regular branches.
+- v2.6.0 SMT prover emits one assertion per `insn_effect_t`
+  and requires the fold to agree with `gadget_effect_compute`
+  — this function is the reference implementation of that fold.
+
+Version bump 2.1.0 → 2.1.1 (additive).
+
 ## [2.1.0] — 2026-04-18
 
 **Per-instruction effect IR.** First V3 sprint (Stage VII opens).

@@ -78,6 +78,18 @@ typedef struct {
  * anyway — callers don't need to special-case architectures. */
 int gadget_effect_compute(const gadget_t *g, gadget_effect_t *out);
 
+/* v2.1.1: compositional variant. Walks the gadget via
+ * insn_effect_decode() and folds per-instruction effects into
+ * the gadget total. Produces the same gadget_effect_t as
+ * gadget_effect_compute on the shapes both recognise, but makes
+ * "did we hit an unknown instruction in the middle" explicit via
+ * the return value — returns the instruction count on success,
+ * -1 if any instruction couldn't be decoded.
+ *
+ * Used by the chain-correctness prover (v2.6.0) where per-insn
+ * SMT assertions must line up with the gadget postcondition. */
+int gadget_effect_compose(const gadget_t *g, gadget_effect_t *out);
+
 /* Test helpers: convenience predicates for common questions. */
 static inline int gadget_effect_writes(const gadget_effect_t *e, int r)
 {
