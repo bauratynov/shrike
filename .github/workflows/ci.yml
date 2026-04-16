@@ -139,12 +139,18 @@ jobs:
               return 0;
           }
           EOF
-          ${{ matrix.cc }} -O2 -o /tmp/target /tmp/target.c
-          file /tmp/target
+          # mingw bakes an .exe suffix; other gcc cross-compilers don't.
+          case "${{ matrix.arch }}" in
+              pe-*) TARGET_OUT=/tmp/target.exe ;;
+              *)    TARGET_OUT=/tmp/target ;;
+          esac
+          ${{ matrix.cc }} -O2 -o "$TARGET_OUT" /tmp/target.c
+          echo "TARGET_OUT=$TARGET_OUT" >> $GITHUB_ENV
+          file "$TARGET_OUT"
       - name: scan with shrike
         run: |
-          ./shrike --quiet /tmp/target
-          n=$(./shrike --quiet /tmp/target 2>&1 | grep 'emitted' | \
+          ./shrike --quiet "$TARGET_OUT"
+          n=$(./shrike --quiet "$TARGET_OUT" 2>&1 | grep 'emitted' | \
                 awk '{for(i=1;i<=NF;i++)if($i=="emitted")print $(i-1)}')
           echo "${{ matrix.arch }}: $n gadgets emitted"
           if [ -z "$n" ] || [ "$n" -lt 1 ]; then
@@ -153,7 +159,7 @@ jobs:
           fi
       - name: scan with --json
         run: |
-          ./shrike --json --quiet /tmp/target | head -3
+          ./shrike --json --quiet "$TARGET_OUT" | head -3
 
   python-wheel:
     name: Python wheel + import smoke
