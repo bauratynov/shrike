@@ -104,13 +104,23 @@ typedef struct {
 } elf64_t;
 
 /* mmap + parse + fill the segs[] array with executable PT_LOAD entries.
- * Returns 0 on success, -1 + errno on failure. */
+ * Returns 0 on success, -1 + errno on failure.
+ *
+ * v1.9.1: this function is part of the 1.x C surface that goes
+ * internal in 2.0 — the v2 opaque-handle API (shrike_open /
+ * shrike_iter_*) replaces the manual loader-plus-scan loop.
+ * See docs/migration-1-to-2.md. */
+#include <shrike/version.h>
+SHRIKE_DEPRECATED("retired in 2.0 — use shrike_open(). "
+                  "See docs/migration-1-to-2.md.")
 int  elf64_load(const char *path, elf64_t *out);
 
 /* Parse an already-resident buffer. The caller guarantees buf outlives
  * the elf64_t. Useful for unit tests. */
+SHRIKE_DEPRECATED("retired in 2.0 — use shrike_open_mem().")
 int  elf64_load_buffer(const uint8_t *buf, size_t size, elf64_t *out);
 
+SHRIKE_DEPRECATED("retired in 2.0 — use shrike_close().")
 void elf64_close(elf64_t *e);
 
 #ifdef __cplusplus

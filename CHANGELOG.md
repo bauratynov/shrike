@@ -3,6 +3,51 @@
 All notable changes to `shrike` are listed here. Project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.1] — 2026-04-18
+
+**Deprecation markers for the v2 cutover.** The `SHRIKE_DEPRECATED`
+attribute macro lives in `<shrike/version.h>` and is applied to
+every 1.x-era function that goes internal in 2.0. Downstream code
+compiled against 1.9.1 headers now gets compiler warnings at
+call sites — with a migration message that points at
+`docs/migration-1-to-2.md`.
+
+### Changes
+- `<shrike/version.h>` exports `SHRIKE_DEPRECATED(msg)` — expands
+  to `__attribute__((deprecated(msg)))` on gcc/clang, the MSVC
+  equivalent on MSVC, a no-op elsewhere. Suppressible by
+  defining `SHRIKE_IGNORE_DEPRECATIONS` before inclusion.
+- `<shrike/elf64.h>` annotates `elf64_load`, `elf64_load_buffer`,
+  `elf64_close` with deprecation messages pointing at
+  `shrike_open` / `shrike_open_mem` / `shrike_close`.
+- `Makefile` and `tests/Makefile` both define
+  `SHRIKE_IGNORE_DEPRECATIONS` for the in-tree compile — we
+  still exercise the deprecated API in our own tests until 2.0
+  removes it. Downstream consumers don't get the flag by default.
+- Cross-arch CI consumer in `install-smoke` stays clean because
+  it only includes `<shrike/version.h>` — no deprecated calls.
+
+### Expected user experience
+Compiling legacy code against 1.9.1 headers produces warnings
+like:
+
+```
+warning: 'elf64_load' is deprecated: retired in 2.0 — use
+    shrike_open(). See docs/migration-1-to-2.md.
+```
+
+Adding `-DSHRIKE_IGNORE_DEPRECATIONS` silences the warnings if
+you need more time to port. The functions still work through
+every 1.9.x release.
+
+### Stage VI — three sprints done, one to go
+v1.8.0 (cross-arch CI) + v1.9.0 (migration guide) + v1.9.1
+(deprecation markers) shipped. v2.0.0 is next and cuts the
+canonical version over to 2.x.
+
+Version bump 1.9.0 → 1.9.1 (additive — annotation only, no
+removal).
+
 ## [1.9.0] — 2026-04-18
 
 **v1→v2 migration guide.** `docs/migration-1-to-2.md` is now

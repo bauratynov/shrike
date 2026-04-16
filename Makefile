@@ -30,7 +30,8 @@ INSTALL  ?= install
 CSTD     ?= -std=c99
 WARN     ?= -Wall -Wextra -Wshadow -Wpedantic -Wstrict-prototypes -Wmissing-prototypes
 OPT      ?= -O2
-CFLAGS   += $(CSTD) $(WARN) $(OPT) -Iinclude -D_GNU_SOURCE
+CFLAGS   += $(CSTD) $(WARN) $(OPT) -Iinclude -D_GNU_SOURCE \
+            -DSHRIKE_IGNORE_DEPRECATIONS
 LDFLAGS  +=
 LDLIBS   +=
 

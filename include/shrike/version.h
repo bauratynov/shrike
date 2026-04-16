@@ -33,7 +33,7 @@ extern "C" {
 
 #define SHRIKE_VERSION_MAJOR 1
 #define SHRIKE_VERSION_MINOR 9
-#define SHRIKE_VERSION_PATCH 0
+#define SHRIKE_VERSION_PATCH 1
 
 /* Compose a packed decimal version for compile-time comparisons. */
 #define SHRIKE_MK_VERSION(major, minor, patch) \
@@ -59,6 +59,23 @@ extern "C" {
  * always report the *library's* version, not the header's. */
 const char *shrike_version_string(void);
 uint32_t    shrike_version_number(void);
+
+/* v1.9.1: attribute macro used by 1.x public headers to mark
+ * symbols that are being retired in 2.0. Downstream code
+ * compiled against 1.9.x gets compiler warnings with a message
+ * pointing at docs/migration-1-to-2.md. Defining
+ * SHRIKE_IGNORE_DEPRECATIONS before including any shrike
+ * header suppresses the attribute — useful for vendored
+ * legacy code that hasn't been ported yet. */
+#if defined(SHRIKE_IGNORE_DEPRECATIONS)
+#  define SHRIKE_DEPRECATED(msg)
+#elif defined(__GNUC__) || defined(__clang__)
+#  define SHRIKE_DEPRECATED(msg) __attribute__((deprecated(msg)))
+#elif defined(_MSC_VER)
+#  define SHRIKE_DEPRECATED(msg) __declspec(deprecated(msg))
+#else
+#  define SHRIKE_DEPRECATED(msg)
+#endif
 
 #ifdef __cplusplus
 }

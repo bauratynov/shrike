@@ -2,7 +2,8 @@ CC       ?= cc
 CSTD     ?= -std=c99
 WARN     ?= -Wall -Wextra -Wshadow -Wpedantic -Wstrict-prototypes -Wmissing-prototypes
 OPT      ?= -O0 -g
-CFLAGS   += $(CSTD) $(WARN) $(OPT) -I../include
+CFLAGS   += $(CSTD) $(WARN) $(OPT) -I../include \
+            -DSHRIKE_IGNORE_DEPRECATIONS
 
 LIB := ../libshrike.a
 
