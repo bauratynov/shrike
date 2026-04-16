@@ -3,6 +3,30 @@
 All notable changes to `shrike` are listed here. Project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.0] — 2026-04-18
+
+**v1→v2 migration guide.** `docs/migration-1-to-2.md` is now
+authoritative. Sections cover which contracts stay frozen (CLI,
+JSON, SARIF, exit codes), the one already-done include path
+change from 1.1.1, the new stable C API surface, the soname
+bump (`.so.1` → `.so.2`), and a recommended porting order.
+
+### Changes
+- `docs/migration-1-to-2.md` (new) — enumerates every break
+  category. Side-by-side before/after snippets for include
+  paths, the opaque-handle C API, and accessor-vs-direct-field
+  struct access. Called out in the README under "Roadmap" so
+  it's discoverable during the upgrade.
+
+### What's intentionally missing from this version
+No deprecation warnings yet — those land in 1.9.1. The 1.9.0
+bump is documentation-only so downstream maintainers can read
+the guide and plan the port while the 1.9.1 warnings are still
+being wired into the CLI.
+
+Version bump 1.8.0 → 1.9.0 (minor — new doc, nothing else
+changed).
+
 ## [1.8.0] — 2026-04-18
 
 **Cross-arch CI matrix.** Opens Stage VI (polish + v2 release
