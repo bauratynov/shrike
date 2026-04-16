@@ -3,6 +3,74 @@
 All notable changes to `shrike` are listed here. Project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] — 2026-04-18
+
+**Second stable release — stable C API + shared library.**
+
+24 sprints from v1.1.0 (V2_ROADMAP opening, static-library
+split) through v2.0.0. Every roadmap stage shipped:
+
+- **Stage I (1.1.x)** — `libshrike.a` + `libshrike.so.1`,
+  versioned headers, pkg-config, `make install`.
+- **Stage II (1.2–1.4)** — native PE/COFF, Mach-O 64 (thin +
+  fat), RISC-V RV64GC loaders and scanners. Zero `objcopy`
+  workarounds remaining.
+- **Stage III (1.5.x)** — gadget effect IR, stack-slot
+  accounting, multi-pop permutation, clobber graph, auto
+  padding. `--recipe` now synthesizes optimal chains.
+- **Stage IV (1.6.x)** — x86-64 operand decoder
+  (ModR/M+SIB+disp), SSE (non-VEX) coverage, aarch64 expanded
+  coverage (LDP / ADD/SUB imm / MOVZ/MOVK / B/BL).
+- **Stage V (1.7.x)** — `python/shrike/` subprocess wrapper +
+  PyPI packaging (`shrike-py`).
+- **Stage VI (1.8–1.9)** — cross-arch CI matrix, v1→v2
+  migration guide, `SHRIKE_DEPRECATED` markers.
+
+### 2.0-specific changes
+- **New `<shrike/shrike.h>`** — opaque-handle C API frozen for
+  2.x:
+  - `shrike_open`, `shrike_open_mem`, `shrike_close`
+  - `shrike_iter_begin`, `shrike_iter_next`, `shrike_iter_end`
+  - `shrike_gadget_{address,bytes,size,disasm,category,arch,
+    instruction_count}`
+  - `shrike_set_option_{int,str}` + `SHRIKE_OPT_*` enum
+  - `shrike_errno` + `shrike_strerror`
+- **`src/shrike_api.c`** — thin wrapper over 1.x machinery.
+  Eager scan at open time, cached gadget vector, iterator
+  walks it.
+- **`libshrike.so.2`** — soname bump. SOMAJOR tracks
+  `SHRIKE_VERSION_MAJOR`, so the new `.so.2` is what
+  downstream ld.so picks up after the upgrade.
+- **`STABILITY.md` rewritten** to cover the C API explicitly.
+  Everything in `include/shrike/` other than `shrike.h` and
+  `version.h` is internal (but still usable with
+  `SHRIKE_DEPRECATED` warnings).
+- **`tests/test_api.c`** — smoke test using only the opaque
+  API: builds a PE64 in memory, opens it with
+  `shrike_open_mem`, walks every gadget via the iterator,
+  asserts addresses + arch + non-empty disasm.
+- **README** — version badge bumped, v1.0.0 blurb replaced
+  with 2.0.0 summary pointing at the migration guide.
+
+### What this means for users
+- **CLI users**: `shrike foo.so` continues to work unchanged.
+  `--version` now reports "2.0.0".
+- **JSON / SARIF consumers**: schemas identical to 1.x.
+  Forward compatibility preserved.
+- **Python consumers**: `pip install shrike-py` installs a
+  wheel that subprocesses the CLI; new ctypes fast path
+  (hooked into `libshrike.so.2`) is automatic when the lib
+  is findable, no API change.
+- **C library consumers**: port to `<shrike/shrike.h>` per
+  [docs/migration-1-to-2.md](docs/migration-1-to-2.md). The
+  1.x functions still work through the 2.0 header (with
+  deprecation warnings); set `-DSHRIKE_IGNORE_DEPRECATIONS`
+  during the transition.
+
+Version bump 1.9.1 → 2.0.0. The 1.x line is closed; 2.x
+patch bumps land on top of this tag. Stage VII work
+(V3_ROADMAP) opens at 2.1.0.
+
 ## [1.9.1] — 2026-04-18
 
 **Deprecation markers for the v2 cutover.** The `SHRIKE_DEPRECATED`

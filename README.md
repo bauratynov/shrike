@@ -7,17 +7,19 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Language: C99](https://img.shields.io/badge/Language-C99-blue.svg)](https://en.wikipedia.org/wiki/C99)
 [![Platform: x86-64 + aarch64](https://img.shields.io/badge/Platform-x86__64%20%2B%20aarch64-green.svg)](https://refspecs.linuxfoundation.org/elf/)
-[![Release: 1.0.0](https://img.shields.io/badge/Release-1.0.0-brightgreen.svg)](CHANGELOG.md)
+[![Release: 2.0.0](https://img.shields.io/badge/Release-2.0.0-brightgreen.svg)](CHANGELOG.md)
 
 **Freestanding C99 ROP gadget scanner.** x86-64 and AArch64. Zero
 runtime dependencies. One static binary you drop on any Linux host
 — distroless container, air-gapped workstation, hardened FIPS
 build environment.
 
-> **1.0.0 — stable.** API frozen, JSON + SARIF schemas frozen,
-> exit codes frozen. See [STABILITY.md](STABILITY.md) for the
-> contract. See [CHANGELOG.md](CHANGELOG.md) for every minor since
-> 0.1.0.
+> **2.0.0 — stable.** C API frozen (`<shrike/shrike.h>`), CLI +
+> JSON + SARIF + exit codes unchanged from 1.x, ships as
+> `libshrike.so.2` + `libshrike.a`. See [STABILITY.md](STABILITY.md)
+> for the contract. Upgrading from 1.x? Start at
+> [docs/migration-1-to-2.md](docs/migration-1-to-2.md). See
+> [CHANGELOG.md](CHANGELOG.md) for every minor since 0.1.0.
 
 ---
 
@@ -102,13 +104,20 @@ shrike/
 └── STABILITY.md    1.x API contract
 ```
 
-## Roadmap (post 1.0)
+## Roadmap
 
-- **1.1** — native PE/COFF and Mach-O loaders
-- **1.2** — RISC-V RV64GC scanner
-- **1.3** — multi-pop permutation search in `--recipe` + stack-slot
-  accounting (pwntools-style optimal chain)
-- **2.0** — stable C API (pre-built `libshrike.so`)
+- **1.x (complete)** — Stage I library shape, Stage II native
+  loaders (PE, Mach-O, RV64), Stage III chain synthesis,
+  Stage IV disassembler depth, Stage V Python binding,
+  Stage VI polish + test matrix.
+- **2.0.0 (now)** — stable C API, `libshrike.so.2`, `shrike-py`
+  wheel. Migration guide at
+  [docs/migration-1-to-2.md](docs/migration-1-to-2.md).
+- **2.x → 3.0** — 29-sprint plan in [V3_ROADMAP.md](V3_ROADMAP.md):
+  symbolic gadget effects, JOP/COP/DOP enumeration, PE+PDB
+  symbol enrichment, PowerPC + MIPS, dynamic discovery via
+  LBR/perf, Binary Ninja/IDA plugins, SMT chain-correctness
+  proofs.
 
 ## Companion tools
 
