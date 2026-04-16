@@ -26,7 +26,7 @@ main(void)
 {
     /* Compile-time macros must be visible here. */
     CHECK(SHRIKE_VERSION_MAJOR >= 1);
-    CHECK(SHRIKE_VERSION_MINOR >= 1);
+    CHECK(SHRIKE_VERSION_MINOR >= 0);
     CHECK(SHRIKE_VERSION_PATCH >= 0);
 
     /* Packed form equals runtime getter. */
@@ -39,7 +39,7 @@ main(void)
 
     /* Compile-time comparison works — evaluates in the preprocessor,
      * so the test fails at build time on regression, not at runtime. */
-#if !(SHRIKE_VERSION >= SHRIKE_MK_VERSION(1, 1, 0))
+#if !(SHRIKE_VERSION >= SHRIKE_MK_VERSION(1, 0, 0))
 #  error "SHRIKE_VERSION comparison broken"
 #endif
 

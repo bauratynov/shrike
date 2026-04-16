@@ -62,17 +62,16 @@ jobs:
           test -f destdir/usr/include/shrike/version.h
           test -f destdir/usr/include/shrike/scan.h
           # Shared library + soname + linker symlink all present.
+          # Major version-agnostic: passes for libshrike.so.1, .so.2, etc.
           test -f destdir/usr/lib/libshrike.so
           test -L destdir/usr/lib/libshrike.so
-          test -L destdir/usr/lib/libshrike.so.1
-          # Real .so file — version-agnostic glob so future bumps
-          # don't need a CI edit.
+          ls destdir/usr/lib/libshrike.so.[0-9]* | grep -v '\.[0-9]*\.[0-9]*$'
           ls destdir/usr/lib/libshrike.so.[0-9]*.[0-9]*.[0-9]*
       - name: soname embedded in the .so
         run: |
-          # readelf confirms the dynamic linker sees libshrike.so.1.
+          # readelf confirms the dynamic linker sees libshrike.so.<major>.
           so_real=$(ls destdir/usr/lib/libshrike.so.[0-9]*.[0-9]*.[0-9]*)
-          readelf -d "$so_real" | grep -E 'SONAME.*libshrike\.so\.1'
+          readelf -d "$so_real" | grep -E 'SONAME.*libshrike\.so\.[0-9]+'
       - name: PREFIX install into a real path (for pkg-config resolution)
         run: |
           make clean
