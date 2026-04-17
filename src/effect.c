@@ -284,21 +284,19 @@ gadget_is_dispatcher(const gadget_t *g, gadget_term_t which)
         if (n <= 0) {
             int step = 0;
             if (g->machine == EM_X86_64) {
-                int xl = 0;
-                if (xdec_length(g->bytes + pos, g->length - pos, &xl) < 0 ||
-                    xl <= 0) break;
-                step = xl;
-                /* A memory-source MOV / LEA / load writes the
-                 * destination reg — conservatively treat any
-                 * unknown x86 instruction as writing the reg in
-                 * the ModR/M `reg` field when present. */
-                if (step >= 2 && (g->bytes[pos] == 0x8B ||
-                                  g->bytes[pos] == 0x8D)) {
-                    int rex_r = 0;
-                    if (pos > 0 && (g->bytes[pos - 1] & 0xF0) == 0x40)
-                        rex_r = (g->bytes[pos - 1] >> 2) & 1;
-                    uint8_t modrm = g->bytes[pos + 1];
-                    int reg = ((modrm >> 3) & 7) | (rex_r << 3);
+                xdec_info_t xi;
+                if (xdec_full(g->bytes + pos, g->length - pos, &xi) < 0 ||
+                    xi.length <= 0) break;
+                step = xi.length;
+                /* A memory-source MOV (0x8B) or LEA (0x8D) writes
+                 * the destination reg — conservatively mark it
+                 * so the dispatcher shape registers even though
+                 * insn_effect_decode doesn't yet enumerate every
+                 * MOV form. REX.R extends the reg field. */
+                if ((xi.opcode == 0x8B || xi.opcode == 0x8D) &&
+                    xi.has_modrm) {
+                    int rex_r = (xi.rex >> 2) & 1;
+                    int reg = ((xi.modrm >> 3) & 7) | (rex_r << 3);
                     writes_so_far |= 1u << reg;
                 }
             } else if (g->machine == EM_AARCH64) {
