@@ -156,6 +156,28 @@ main(void)
     test_rv_ecall();
     test_compose_matches();
 
+    /* v2.1.2: dispatcher-shape detection.
+     * mov rax, [rdx] ; jmp rax   (canonical JOP dispatcher)
+     *   48 8B 02           mov rax, [rdx]
+     *   FF E0              jmp rax
+     * Full byte sequence: 48 8B 02 FF E0 */
+    {
+        uint8_t disp[] = { 0x48, 0x8B, 0x02, 0xFF, 0xE0 };
+        gadget_t g = {0};
+        g.bytes = disp; g.length = sizeof disp; g.machine = EM_X86_64;
+        CHECK(gadget_is_dispatcher(&g, GADGET_TERM_JMP_REG) == 1);
+        CHECK(gadget_is_dispatcher(&g, GADGET_TERM_CALL_REG) == 0);
+    }
+    /* Negative: plain jmp rax without a preceding write — not a
+     * dispatcher, just an arbitrary indirect branch we happened
+     * to catch. */
+    {
+        uint8_t stray[] = { 0xFF, 0xE0 };
+        gadget_t g = {0};
+        g.bytes = stray; g.length = sizeof stray; g.machine = EM_X86_64;
+        CHECK(gadget_is_dispatcher(&g, GADGET_TERM_JMP_REG) == 0);
+    }
+
     if (fails == 0) {
         printf("test_effect: ok\n");
         return 0;

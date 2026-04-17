@@ -26,6 +26,7 @@
 #include <shrike/elf64.h>
 #include <shrike/arm64.h>
 #include <shrike/riscv.h>
+#include <shrike/xdec.h>
 
 #include <stdint.h>
 #include <string.h>
@@ -255,6 +256,100 @@ gadget_effect_compute(const gadget_t *g, gadget_effect_t *out)
     if (g->machine == EM_AARCH64) return compute_a64(g, out);
     if (g->machine == EM_RISCV)   return compute_rv(g, out);
     return compute_x86(g, out);
+}
+
+/* v2.1.2: dispatcher classifier. We walk the gadget once,
+ * track the last indirect-branch terminator plus the x86
+ * ModR/M target register (or the aarch64 Xn / RV64 rs1), and
+ * check whether an earlier insn wrote that register. Tight
+ * scope — full Bletsch dispatcher detection (loop-carried
+ * memory cursor) is in V3's semantic-depth sprints. */
+int
+gadget_is_dispatcher(const gadget_t *g, gadget_term_t which)
+{
+    if (!g || g->length == 0) return 0;
+
+    size_t pos = 0;
+    uint32_t writes_so_far = 0;
+    int target = -1;      /* reg used by the branch, or -1 if unknown */
+
+    while (pos < g->length) {
+        insn_effect_t ie;
+        int n = insn_effect_decode(g->bytes + pos, g->length - pos,
+                                   g->machine, &ie);
+        /* Unknown instruction — step past it using a length-only
+         * decoder so the dispatcher-shape walker can still span
+         * gadgets whose middle contains mov/lea/add shapes we
+         * haven't yet taught insn_effect_decode about. */
+        if (n <= 0) {
+            int step = 0;
+            if (g->machine == EM_X86_64) {
+                int xl = 0;
+                if (xdec_length(g->bytes + pos, g->length - pos, &xl) < 0 ||
+                    xl <= 0) break;
+                step = xl;
+                /* A memory-source MOV / LEA / load writes the
+                 * destination reg — conservatively treat any
+                 * unknown x86 instruction as writing the reg in
+                 * the ModR/M `reg` field when present. */
+                if (step >= 2 && (g->bytes[pos] == 0x8B ||
+                                  g->bytes[pos] == 0x8D)) {
+                    int rex_r = 0;
+                    if (pos > 0 && (g->bytes[pos - 1] & 0xF0) == 0x40)
+                        rex_r = (g->bytes[pos - 1] >> 2) & 1;
+                    uint8_t modrm = g->bytes[pos + 1];
+                    int reg = ((modrm >> 3) & 7) | (rex_r << 3);
+                    writes_so_far |= 1u << reg;
+                }
+            } else if (g->machine == EM_AARCH64) {
+                step = 4;
+            } else if (g->machine == EM_RISCV) {
+                step = (int)riscv_insn_len(g->bytes + pos,
+                                           g->length - pos);
+                if (step <= 0) break;
+            } else {
+                break;
+            }
+            pos += (size_t)step;
+            continue;
+        }
+
+        if (ie.terminator == which) {
+            /* Work out which register the branch consumed.
+             * For x86, FF /4 and FF /5 carry rm in the ModR/M;
+             * we need to peek at the decoded bytes. */
+            if (g->machine == EM_X86_64) {
+                if (pos + 1 < g->length && g->bytes[pos] == 0xFF) {
+                    uint8_t modrm = g->bytes[pos + 1];
+                    target = modrm & 7;
+                    /* REX.B on preceding byte extends it. */
+                    if (pos > 0 && (g->bytes[pos - 1] & 0xF0) == 0x40 &&
+                        (g->bytes[pos - 1] & 0x01)) {
+                        target |= 8;
+                    }
+                }
+            } else if (g->machine == EM_AARCH64) {
+                if (pos + 4 <= g->length) {
+                    uint32_t insn = arm64_read_insn(g->bytes + pos);
+                    target = (int)((insn >> 5) & 0x1f);
+                }
+            } else if (g->machine == EM_RISCV) {
+                /* c.jr / c.jalr encode rs1 at bits 11..7. */
+                if (pos + 2 <= g->length) {
+                    uint16_t h = (uint16_t)(g->bytes[pos] |
+                                            (g->bytes[pos + 1] << 8));
+                    target = (int)((h >> 7) & 0x1f);
+                }
+            }
+            break;
+        }
+
+        writes_so_far |= ie.writes_mask;
+        pos += (size_t)n;
+    }
+
+    if (target < 0 || target >= 32) return 0;
+    return (writes_so_far >> target) & 1;
 }
 
 /* v2.1.1: compositional walk. Calls insn_effect_decode once per

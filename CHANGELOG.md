@@ -3,6 +3,45 @@
 All notable changes to `shrike` are listed here. Project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.2] — 2026-04-18
+
+**JOP / COP dispatcher classifier.** `gadget_is_dispatcher(g,
+which)` returns 1 when a gadget ends in the requested indirect
+terminator (JMP_REG for JOP, CALL_REG for COP) AND some earlier
+instruction in the same gadget wrote the target register.
+Canonical Bletsch shape:
+
+```
+mov rax, [rdx]  ;  add rdx, 8  ;  jmp rax
+```
+
+### Changes
+- `<shrike/effect.h>` exports `gadget_is_dispatcher`.
+- Walker tolerates unknown x86 instructions by stepping past
+  them via `xdec_length`, and opportunistically marks
+  destination registers of `mov reg, r/m` (0x8B) and `lea`
+  (0x8D) as written so classic dispatcher shapes (mem-source
+  load + indirect jmp) register correctly even though
+  `insn_effect_decode` doesn't yet enumerate every MOV form.
+- `insn_effect_decode` grows the `FF /2` (call reg) and
+  `FF /4` (jmp reg) mod=3 forms so the walker's terminator
+  detection finds them without a secondary pass through the
+  bytes.
+- `test_effect.c` pins the happy path (dispatcher detected,
+  COP returns 0) and the negative case (bare `jmp rax` with
+  no preceding write is not a dispatcher).
+
+### Not yet in scope
+- Loop-carried memory cursor detection (the `add rdx, 8`
+  half of the Bletsch pattern — we don't yet require the
+  dispatch register itself to be updated).
+- aarch64 / RV64 dispatcher detection uses the same logic
+  but those archs' `insn_effect_decode` MOV/LDR coverage is
+  partial; full parity lands alongside the semantic-depth
+  work in v2.1.4.
+
+Version bump 2.1.1 → 2.1.2 (additive).
+
 ## [2.1.1] — 2026-04-18
 
 **Effect composer.** `gadget_effect_compose()` walks a gadget

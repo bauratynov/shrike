@@ -80,6 +80,28 @@ decode_x86(const uint8_t *b, size_t max, insn_effect_t *o)
         o->length     = 1;
         return 1;
     }
+    /* FF /2..5 — indirect call/jmp, reg or memory. Only the
+     * mod=3 (register) form here; mem forms fall through to -1
+     * since the dispatcher walker only cares about register
+     * terminators. */
+    if (op == 0xFF && max >= 2) {
+        uint8_t modrm = b[1];
+        uint8_t rr = (modrm >> 3) & 0x7;
+        if ((modrm >> 6) == 3) {
+            if (rr == 2) {
+                o->flags      = INSN_EFFECT_KNOWN;
+                o->terminator = GADGET_TERM_CALL_REG;
+                o->length     = 2;
+                return 2;
+            }
+            if (rr == 4) {
+                o->flags      = INSN_EFFECT_KNOWN;
+                o->terminator = GADGET_TERM_JMP_REG;
+                o->length     = 2;
+                return 2;
+            }
+        }
+    }
     return -1;
 }
 

@@ -78,6 +78,20 @@ typedef struct {
  * anyway — callers don't need to special-case architectures. */
 int gadget_effect_compute(const gadget_t *g, gadget_effect_t *out);
 
+/* v2.1.2: dispatcher-shape classifier. Returns 1 when the
+ * gadget's last instruction is an indirect JMP (JOP) or CALL
+ * (COP) and some earlier instruction wrote to that same target
+ * register — the canonical Bletsch dispatcher pattern
+ *   `mov rax, [rdx] ; add rdx, 8 ; jmp rax`
+ * where the jump target is loaded from memory or a register
+ * that itself got set in the same gadget. Used to
+ * prioritise gadgets suitable for JOP/COP payload scheduling
+ * over stray indirect branches.
+ *
+ * which is GADGET_TERM_JMP_REG for JOP, GADGET_TERM_CALL_REG
+ * for COP — callers pass whichever they're looking for. */
+int gadget_is_dispatcher(const gadget_t *g, gadget_term_t which);
+
 /* v2.1.1: compositional variant. Walks the gadget via
  * insn_effect_decode() and folds per-instruction effects into
  * the gadget total. Produces the same gadget_effect_t as
