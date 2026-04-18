@@ -7,7 +7,7 @@ CFLAGS   += $(CSTD) $(WARN) $(OPT) -I../include \
 
 LIB := ../libshrike.a
 
-TESTS := test_xdec test_scan test_cet test_arm64 test_category test_regidx test_recipe test_version test_pe test_macho test_riscv test_effect test_api
+TESTS := test_xdec test_scan test_cet test_arm64 test_category test_regidx test_recipe test_version test_pe test_macho test_riscv test_effect test_api test_smt
 
 .PHONY: all run clean
 
@@ -55,6 +55,9 @@ test_effect: test_effect.c $(LIB)
 	$(CC) $(CFLAGS) -o $@ $< $(LIB)
 
 test_api: test_api.c $(LIB)
+	$(CC) $(CFLAGS) -o $@ $< $(LIB)
+
+test_smt: test_smt.c $(LIB)
 	$(CC) $(CFLAGS) -o $@ $< $(LIB)
 
 run: $(TESTS)

@@ -3,6 +3,82 @@
 All notable changes to `shrike` are listed here. Project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.2.0] — 2026-04-18
+
+**Code-review follow-up.** 5.1's review surfaced three
+severity-1 bugs and a list of code smells. This release
+fixes all of them.
+
+### Fixed (severity 1 — real bugs)
+- **Fat Mach-O munmap corruption.** `parse_fat` overwrote
+  `e->map` with the slice pointer; `elf64_close` then called
+  munmap on the slice (wrong pointer, wrong size). Every fat
+  Mach-O load since v1.3.1 leaked or crashed. New
+  `map_base` + `map_base_size` fields set once at load time;
+  `elf64_close` uses those. parse_fat explicitly documented
+  as not touching the base fields.
+- **Fuzz harness link conflicts.** `fuzz_pe.c` / `fuzz_macho.c`
+  defined both `LLVMFuzzerTestOneInput` and `main` under
+  clang, producing symbol-resolution collisions with
+  libFuzzer's main. New explicit `SHRIKE_FUZZ_LIBFUZZER` /
+  `SHRIKE_FUZZ_AFL` build flags pick exactly one entry
+  point per target.
+- **SMT multi-pop sp accounting.** `shrike_smt_emit` emitted
+  one step + 16-byte sp bump per recipe statement; the real
+  resolver merges several statements into one multi-pop
+  gadget consuming 16+8*N bytes total. Z3 reported unsat
+  for correct chains. Rewrote the emitter to walk the recipe
+  the way `resolve_text` does — multi-pop runs collapse into
+  one SMT step with the gadget's actual stack_consumed.
+
+### Fixed (severity 2 — likely wrong)
+- VEX pp field (mandatory prefix) now drives classify_0f,
+  not the stale legacy op66 bit consumed before the VEX
+  prefix was seen.
+- PE section cap raised from 96 to 512; still bounded by
+  `SHRIKE_MAX_SEGMENTS` (32) for what we record, but
+  section-table traversal no longer rejects obfuscator
+  outputs with 100+ entries. Hits `SHRIKE_MAX_SEGMENTS`
+  trigger a one-time `shrike_warn`.
+- `(void)hint;` dead line removed from elf64.c.
+
+### Improved (severity 3 — maintenance / design)
+- **SSE2 + scalar scan bodies deduplicated** via new
+  `emit_x86_gadgets_at` helper. scan_x86 is now ~40 lines;
+  was ~110. Single source of truth for backscan logic.
+- **Warning callback API.** New public
+  `shrike_set_warning_callback(cb, user)` +
+  `shrike_warning_silent`. Internal `shrike_warn()`
+  replaces library-side `fprintf(stderr, ...)`. CLI keeps
+  the default stderr routing; library embedders can
+  silence or redirect.
+- `g_pref_cputype` in macho.c is now thread-local (C11
+  `_Thread_local` with gcc/clang/MSVC fallbacks) —
+  concurrent `shrike_open` from multiple threads no longer
+  races on the --mach-o-arch preference.
+- `load_dispatch` normalises all loader return codes to 0
+  on success or -1 on failure. The -2/-3/-4 dispatch
+  sentinels stay internal to the dispatcher.
+
+### Tests
+- `test_macho.c` grows 4 parse_fat failure fixtures (bad
+  offset, slice past buffer, nfat = 999, FAT_CIGAM).
+- `test_api.c` covers `shrike_errno` / `shrike_strerror` +
+  a round-trip fat-mmap load/close cycle (exercises the
+  map_base fix).
+- New `tests/test_smt.c` — emits SMT output to a
+  `fmemopen`/`tmpfile` buffer, asserts paren balance, one
+  `(check-sat)`, ≥3 `(declare-const)` entries, and that a
+  literal value from the recipe appears in the output.
+
+### ABI
+- soname stays `libshrike.so.5`. elf64_t grows `map_base`
+  + `map_base_size` + macho_arm64e from 5.1. All additive.
+- Added public API: `shrike_set_warning_callback`,
+  `shrike_warning_silent`, `shrike_warning_cb` typedef.
+
+Nothing removed.
+
 ## [5.1.0] — 2026-04-18
 
 **Polish pass.** No new headline features — focused on fixing

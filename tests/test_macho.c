@@ -124,6 +124,51 @@ main(void)
     fat_empty[4] = 0; fat_empty[5] = 0; fat_empty[6] = 0; fat_empty[7] = 0;
     CHECK(macho_load_buffer(fat_empty, sizeof fat_empty, &e) < 0);
 
+    /* v5.2.0: review finding 4.1 — exercise parse_fat failure
+     * paths more thoroughly. Each uses a 1KB buffer with a fat
+     * header + a single arch record whose offset or size is
+     * invalid. All must fail cleanly without OOB reads. */
+    {
+        /* nfat = 1 but slice offset overlaps the fat header */
+        uint8_t bad[0x1000];
+        memset(bad, 0, sizeof bad);
+        bad[0]=0xca; bad[1]=0xfe; bad[2]=0xba; bad[3]=0xbe;
+        bad[7] = 1;  /* nfat = 1 */
+        /* fat_arch[0] @ 8: cputype=X86_64, offset=4 (inside fat hdr) */
+        bad[8] = 0x01; bad[11] = 0x07;
+        bad[19] = 4;   /* offset = 4 */
+        bad[23] = 32;  /* size = 32 */
+        CHECK(macho_load_buffer(bad, sizeof bad, &e) < 0);
+    }
+    {
+        /* nfat = 1, slice offset + size runs past buffer end */
+        uint8_t bad[0x100];
+        memset(bad, 0, sizeof bad);
+        bad[0]=0xca; bad[1]=0xfe; bad[2]=0xba; bad[3]=0xbe;
+        bad[7] = 1;
+        bad[8] = 0x01; bad[11] = 0x07;
+        bad[19] = 0x80;   /* offset = 128 */
+        bad[21] = 0x10; bad[22] = 0x00; bad[23] = 0x00;  /* size = 0x100000 */
+        CHECK(macho_load_buffer(bad, sizeof bad, &e) < 0);
+    }
+    {
+        /* nfat claims 999 slices */
+        uint8_t bad[0x100];
+        memset(bad, 0, sizeof bad);
+        bad[0]=0xca; bad[1]=0xfe; bad[2]=0xba; bad[3]=0xbe;
+        bad[6] = 0x03; bad[7] = 0xe7;   /* nfat = 999 */
+        CHECK(macho_load_buffer(bad, sizeof bad, &e) < 0);
+    }
+    {
+        /* FAT_CIGAM (host-endian fat_header) — we refuse, Apple
+         * tooling never emits this. */
+        uint8_t bad[0x100];
+        memset(bad, 0, sizeof bad);
+        bad[0]=0xbe; bad[1]=0xba; bad[2]=0xfe; bad[3]=0xca;
+        bad[7] = 1;
+        CHECK(macho_load_buffer(bad, sizeof bad, &e) < 0);
+    }
+
     /* v1.3.1: fat with one x86_64 slice pointing at the original
      * thin image's payload area. We use x86_64 here because the
      * thin `img` above was assembled with cputype = x86_64 —

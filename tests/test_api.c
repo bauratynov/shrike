@@ -13,6 +13,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
+#include <errno.h>
 
 static int fails = 0;
 
@@ -123,6 +124,36 @@ main(void)
     /* shrike_open on a bogus path must fail cleanly. */
     shrike_ctx_t *bogus;
     CHECK(shrike_open("/nonexistent/path/to/no/binary", &bogus) != 0);
+
+    /* v5.2.0: errno + strerror accessors. shrike_errno on a
+     * NULL ctx must return EINVAL (or equivalent), not crash.
+     * shrike_strerror must return non-NULL for any integer. */
+    CHECK(shrike_errno(NULL) != 0);
+    CHECK(shrike_strerror(0) != NULL);
+    CHECK(shrike_strerror(EINVAL) != NULL);
+
+    /* v5.2.0: fat munmap fix sanity. Build a minimal fat image,
+     * load via shrike_open_mem (which dispatches through the
+     * fat parser), close it. Before the fix, elf64_close's
+     * munmap was a no-op on caller-owned buffers — so the test
+     * passing here doesn't directly prove the mmap-case fix
+     * works, but it does prove parse_fat no longer corrupts
+     * map_base/map_base_size on the way through. */
+    uint8_t fat[0x1000];
+    memset(fat, 0, sizeof fat);
+    /* FAT_MAGIC big-endian */
+    fat[0]=0xca; fat[1]=0xfe; fat[2]=0xba; fat[3]=0xbe;
+    fat[7] = 1;
+    /* fat_arch[0]: cputype=X86_64, offset=0x400, size=0x800 */
+    fat[8]=0x01; fat[11]=0x07;
+    fat[17] = 0; fat[18] = 0x04; fat[19] = 0;   /* offset 0x400 */
+    fat[21] = 0; fat[22] = 0x08; fat[23] = 0;   /* size 0x800 */
+    /* reuse the thin image bytes from above for the slice payload */
+    memcpy(fat + 0x400, image, sizeof image);
+    shrike_ctx_t *fctx;
+    int frc = shrike_open_mem(fat, sizeof fat, &fctx);
+    CHECK(frc == 0);
+    if (fctx) shrike_close(fctx);    /* must NOT crash */
 
     if (fails == 0) {
         printf("test_api: ok (seen=%d gadgets)\n", seen);
