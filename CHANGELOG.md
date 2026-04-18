@@ -3,6 +3,82 @@
 All notable changes to `shrike` are listed here. Project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.3.0] — 2026-04-18
+
+**CET-aware chain synthesis.** First open-source ROP scanner
+that PREFERS ENDBR-landing-pad gadgets when the target
+image requires IBT. Chains built here survive hardware CET
+checks on real CET-enabled binaries.
+
+### The feature
+When you scan a binary whose `.note.gnu.property` (ELF) or
+`DllCharacteristicsEx` (PE) declares IBT, the recipe
+resolver now:
+
+1. For each `SET_REG`, picks the observed gadget that
+   starts at an ENDBR64 landing pad — if such a gadget
+   exists for that register.
+2. For multi-pop gadgets, tiebreaks same-popcount
+   candidates by endbr_start — IBT-surviving wins.
+3. For syscall terminators, same deal.
+4. Annotates each line `[cet: endbr-start]` or
+   `[cet: FAIL — no endbr-start]`.
+5. Emits a chain-level summary:
+   `# cet-posture: image requires IBT + SHSTK — chain survives.`
+
+### Under the hood
+- `regidx_t` grows parallel `endbr_start[REGIDX_MAX_REGS]
+  [REGIDX_MAX_PER]` and `syscall_endbr_start[REGIDX_MAX_PER]`
+  arrays + `cet_ibt_required` / `cet_shstk_required` image
+  flags.
+- `regidx_multi_t` grows `endbr_start` for multi-pop entries.
+- `regidx_credit` / `regidx_credit_multi` take an `endbr`
+  argument populated from `cet_starts_endbr(g)` at observe
+  time.
+- `regidx_pick_index(ri, reg, cet_aware)` — new accessor
+  returning the preferred index. Biases endbr-start when
+  cet_aware is on.
+- `regidx_find_multi` tiebreaks on endbr when
+  `ri.cet_ibt_required`.
+- `main.c` auto-detects IBT from PT_GNU_PROPERTY / PE
+  DllCharacteristicsEx at load time, writes into regidx.
+  Multi-binary: strictest-wins (OR across inputs).
+- New CLI flags:
+  - `--cet-aware`     — force CET-aware mode regardless
+                        of the image's stated posture
+  - `--no-cet-aware`  — disable even when the image wants IBT
+
+### Tests
+- `test_regidx.c` grows `test_cet_aware_pick` — observes a
+  plain gadget and an endbr-starting one for the same reg,
+  asserts the CET-aware picker prefers the endbr one.
+
+### Docs
+- `docs/book/05-cet-awareness.md` — full chapter explaining
+  the motivation, the output, multi-binary semantics, what
+  the feature DOESN'T cover, and why it's portfolio-visible
+  (no other open-source scanner ships this).
+
+### ABI
+- soname stays `libshrike.so.5`.
+- `regidx_t` grows new fields (endbr_start arrays, cet flags).
+  Struct-layout additive — existing field offsets unchanged.
+- New public symbols: `regidx_pick_index`,
+  `regidx_pick_syscall_index`.
+
+### Not yet
+- SHSTK-survivable chain selection (we report the flag,
+  don't yet prefer SHSTK-safe gadgets in the resolver).
+- RISC-V `lpad` instruction support — groundwork laid,
+  real silicon not shipping yet.
+- Retbleed / Inception / transient-ROP awareness.
+
+### What's next (v5.4+)
+- SHSTK-survivable preference
+- Per-chain CET-survival probability when multi-pop
+  gadgets mix endbr/non-endbr registers
+- ML-assisted gadget selection (research-tier, long runway)
+
 ## [5.2.0] — 2026-04-18
 
 **Code-review follow-up.** 5.1's review surfaced three

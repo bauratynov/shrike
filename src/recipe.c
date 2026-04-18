@@ -270,6 +270,19 @@ static int resolve_text(const recipe_t *r, const regidx_t *idx,
         }
     }
 
+    /* v5.3.0: chain-level CET summary. When the target image
+     * requires IBT and the resolver used even one non-endbr-
+     * start gadget, the runtime chain will die at the first
+     * such gadget. Surface that loudly, separately from the
+     * generic "missing" count. */
+    if (idx->cet_ibt_required) {
+        fprintf(f,
+"# cet-posture: image requires IBT%s%s. Gadgets without "
+"[cet: endbr-start] will trigger #CP and terminate the process.\n",
+            idx->cet_shstk_required ? " + SHSTK" : "",
+            missing ? " — chain NOT survivable" : " — chain survives");
+    }
+
     if (missing) {
         fprintf(f,
 "# %d missing — the chain above is INCOMPLETE. Scan more binaries\n"

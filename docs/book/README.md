@@ -11,7 +11,10 @@ and how to use it effectively. Short chapters by design.
    synthesis, clobber graph, auto-padding.
 4. [04-verification.md](04-verification.md) — SMT-LIB2 proof
    emitter, Z3 flow, what it catches.
-5. Loaders and Integration chapters are stubbed — will grow
+5. [05-cet-awareness.md](05-cet-awareness.md) — CET-IBT-aware
+   chain synthesis (v5.3.0+). The feature shrike ships that
+   no other open-source scanner does.
+6. Loaders and Integration chapters are stubbed — will grow
    when a real use case shows up that the existing docs don't
    cover.
 

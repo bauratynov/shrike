@@ -330,6 +330,7 @@ int main(int argc, char **argv)
     int         density_mode = 0;     /* v0.17.0: ROPecker histogram */
     int         jop_mode     = 0;     /* v0.18.0: JOP / COP shortcut  */
     int         cet_posture  = 0;     /* v0.19.0: IBT/SHSTK/BTI flags */
+    int         cet_aware_override = -1; /* v5.3.0: -1=auto, 0=off, 1=on */
     int         intersect    = 0;     /* v0.20.0: count shared gadgets */
     int         raw_mode     = 0;     /* v0.21.0: headerless blob     */
     const char *raw_arch     = "x86_64";
@@ -404,6 +405,8 @@ int main(int argc, char **argv)
             unique   = 1;
             cat_tag  = 1;
         } else if (!strcmp(a, "--cet-posture"))              { cet_posture = 1;
+        } else if (!strcmp(a, "--cet-aware"))                { cet_aware_override = 1;
+        } else if (!strcmp(a, "--no-cet-aware"))             { cet_aware_override = 0;
         } else if (!strcmp(a, "--intersect"))                { intersect = 1;
         } else if (!strcmp(a, "--cdx-props"))                { cdx_props = 1;
         } else if (!strcmp(a, "--raw"))                      { raw_mode = 1;
@@ -747,6 +750,9 @@ loaded:
              * strictest posture across inputs. */
             ri.cet_ibt_required   |= (uint8_t)ibt;
             ri.cet_shstk_required |= (uint8_t)shstk;
+            /* --cet-aware / --no-cet-aware override auto-detect. */
+            if (cet_aware_override == 1) ri.cet_ibt_required   = 1;
+            if (cet_aware_override == 0) ri.cet_ibt_required   = 0;
         }
 
         /* v0.19.0: CET / BTI posture — parse PT_GNU_PROPERTY.
