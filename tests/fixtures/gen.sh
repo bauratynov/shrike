@@ -6,7 +6,9 @@
 #
 # Output: tests/fixtures/hello_<arch>
 
-set -euo pipefail
+set -uo pipefail
+# intentionally NOT -e: a missing cross-compiler on one arch
+# shouldn't abort the entire fixture-build phase.
 
 SRC=$(dirname "$0")/hello.c
 OUT=$(dirname "$0")
