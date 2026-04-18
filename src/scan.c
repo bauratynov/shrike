@@ -462,6 +462,31 @@ static size_t scan_ppc64(const elf64_segment_t *seg,
  * their own. Full delay-slot-aware scanning is 5.x work.
  */
 
+/* MIPS delay-slot semantics: the instruction AFTER a branch
+ * (jr / jalr / branch-imm) is in the "branch delay slot" and
+ * executes before control transfers. For gadget scanning that
+ * means:
+ *   - The "real" end of a MIPS gadget is term_end + 4 (branch
+ *     + its delay-slot insn), not term_end.
+ *   - Chain consumers don't need to budget a separate payload
+ *     slot for the delay insn — the delay slot is part of the
+ *     gadget.
+ *
+ * Not every terminator has a delay slot though: `syscall`,
+ * `eret`, and the break-family don't. `jr` / `jalr` do.
+ * mips_has_delay_slot tells us which.
+ */
+static int
+mips_has_delay_slot(uint32_t insn)
+{
+    /* jr rs    SPECIAL funct=001000, rd=0 rs any */
+    if ((insn & 0xFC1FFFFFu) == 0x00000008u) return 1;
+    /* jalr rs  SPECIAL funct=001001 */
+    if ((insn & 0xFC00003Fu) == 0x00000009u) return 1;
+    /* syscall 0x0000000C, eret 0x42000018 — no delay slot */
+    return 0;
+}
+
 static size_t scan_mips(const elf64_segment_t *seg,
                         const scan_config_t   *cfg,
                         gadget_cb_t            cb,
@@ -476,7 +501,16 @@ static size_t scan_mips(const elf64_segment_t *seg,
         if (!mips_is_terminator(insn)) continue;
         if (mips_is_syscall(insn) && !cfg->include_syscall) continue;
 
-        size_t term_end = t + 4;
+        /* Delay-slot-aware gadget end: for jr/jalr we include
+         * the following instruction as part of the gadget. If
+         * there isn't another word's worth of bytes after the
+         * terminator, skip this terminator position — a branch
+         * at the very end of a segment with no delay-slot insn
+         * isn't reachable in practice. */
+        int    has_delay = mips_has_delay_slot(insn);
+        size_t term_end  = has_delay ? t + 8 : t + 4;
+        if (has_delay && t + 8 > seg->size) continue;
+
         int max_insn  = cfg->max_insn;
         int max_words = (int)(t / 4);
         if (max_insn > max_words + 1) max_insn = max_words + 1;
@@ -487,7 +521,10 @@ static size_t scan_mips(const elf64_segment_t *seg,
             g.vaddr      = seg->vaddr + s;
             g.offset     = s;
             g.length     = term_end - s;
-            g.insn_count = k;
+            /* For a gadget with a delay slot, the delay insn
+             * counts as an additional instruction beyond the
+             * k-1 leading ones plus the branch. */
+            g.insn_count = k + (has_delay ? 1 : 0);
             g.bytes      = seg->bytes + s;
             g.machine    = seg->machine;
             cb(seg, &g, ctx);
