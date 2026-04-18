@@ -1,19 +1,22 @@
 /*
  * smt.c — SMT-LIB2 proof emitter for chain correctness.
  *
- * Models each gadget as a transition on a register state. Every
- * register gets a fresh SSA-style 64-bit bitvector variable for
- * each step, and gadgets assert the post-state in terms of the
- * pre-state. Stack pointer `sp` gets the same SSA treatment;
- * each step's stack_consumed comes from the regidx so the
- * assertions match what the actual chain will do at runtime.
+ * Models the resolved chain as a sequence of state transitions
+ * on per-register 64-bit bitvectors + a stack pointer. Every
+ * step corresponds to one GADGET the resolver would pick, which
+ * is not always one recipe statement: a multi-pop gadget
+ * (`pop rdi ; pop rsi ; pop rdx ; ret`) satisfies three SET_REG
+ * statements in one step, consuming stack once (not thrice).
  *
  * Final assertion has two halves:
- *   - every register the recipe requested has the requested literal
- *   - sp_final = sp_0 + sum(per-step stack_consumed)
+ *   - every literal-valued recipe register holds its requested
+ *     value at the final state
+ *   - sp_final = sp_0 + sum(per-gadget stack_consumed)
  *
- * Running through `z3 -smt2 -` produces sat (chain works) or
- * unsat (something clobbers / misalign).
+ * Piped through `z3 -smt2 -`:
+ *   sat   = chain is correct
+ *   unsat = the resolver picked a gadget that clobbers or
+ *           miscounts; (get-model) shows the contradiction.
  */
 
 #include <shrike/smt.h>
@@ -40,23 +43,35 @@ arch_name(uint16_t machine)
     return "x86_64";
 }
 
-/* Bump SP by N bytes per step. For SET_REG we look up the actual
- * observed gadget's stack_consumed from the regidx; for SYSCALL
- * the terminator doesn't touch SP; for RET the emitter owes 8
- * bytes to the caller. Zero when we have no information. */
-static uint32_t
-step_stack_bump(const recipe_stmt_t *st, const regidx_t *idx)
+/* Declare r0..r(nregs-1) + sp at step k. */
+static void
+declare_step(FILE *out, int nregs, int k)
 {
-    if (st->op == RSTMT_SET_REG) {
-        if (st->reg >= 0 && st->reg < REGIDX_MAX_REGS &&
-            idx->counts[st->reg] > 0) {
-            return idx->stack_consumed[st->reg][0];
-        }
-        return 16;      /* conservative default: addr + value slot */
+    for (int r = 0; r < nregs; r++) {
+        fprintf(out, "(declare-const r%d_%d (_ BitVec 64))\n", r, k);
     }
-    if (st->op == RSTMT_RET)     return 8;
-    if (st->op == RSTMT_SYSCALL) return 0;
-    return 0;
+    fprintf(out, "(declare-const sp_%d (_ BitVec 64))\n", k);
+}
+
+/* Assert that every register OUTSIDE `written_mask` is unchanged
+ * between step k-1 and k. */
+static void
+copy_unwritten(FILE *out, int nregs, int k, uint32_t written_mask)
+{
+    for (int r = 0; r < nregs; r++) {
+        if ((written_mask >> r) & 1) continue;
+        fprintf(out, "(assert (= r%d_%d r%d_%d))\n",
+                r, k, r, k - 1);
+    }
+}
+
+/* Emit the per-step sp transition: sp_k = sp_{k-1} + bump. */
+static void
+assert_sp_bump(FILE *out, int k, uint32_t bump)
+{
+    fprintf(out,
+        "(assert (= sp_%d (bvadd sp_%d (_ bv%u 64))))\n",
+        k, k - 1, (unsigned)bump);
 }
 
 int
@@ -64,40 +79,115 @@ shrike_smt_emit(const recipe_t *recipe, const regidx_t *index,
                 uint16_t machine, FILE *out)
 {
     if (!recipe || !index || !out) return -1;
+    if (recipe->n == 0) {
+        fprintf(out, "; empty recipe — trivially sat\n(check-sat)\n");
+        return 0;
+    }
 
     int nregs = regidx_nregs_smt(machine);
     uint64_t sp_total = 0;
 
     fprintf(out,
         "; shrike chain-correctness proof\n"
-        "; arch: %s  steps: %d  registers: %d\n"
-        "; pipe this file through `z3 -smt2 -` for a sat/unsat verdict.\n"
+        "; arch: %s  recipe statements: %d  registers: %d\n"
+        "; pipe through `z3 -smt2 -` for a sat/unsat verdict.\n"
         "(set-logic QF_BV)\n"
         "(set-option :produce-models true)\n\n",
         arch_name(machine), recipe->n, nregs);
 
-    /* Step 0 — initial symbolic state. Registers + sp are fresh
-     * 64-bit bitvector consts. No constraints yet; they'll be
-     * related to the post-state through per-step assertions. */
-    for (int r = 0; r < nregs; r++) {
-        fprintf(out, "(declare-const r%d_0 (_ BitVec 64))\n", r);
-    }
-    fprintf(out, "(declare-const sp_0 (_ BitVec 64))\n\n");
+    /* Step 0: fresh symbolic initial state. */
+    declare_step(out, nregs, 0);
+    fputc('\n', out);
 
-    for (int s = 0; s < recipe->n; s++) {
-        const recipe_stmt_t *st = &recipe->stmts[s];
-        int k = s + 1;
-        uint32_t bump = step_stack_bump(st, index);
+    int k = 0;          /* step counter (runs ahead of statement i) */
+
+    for (int i = 0; i < recipe->n; ) {
+        const recipe_stmt_t *st = &recipe->stmts[i];
+
+        /* Before processing a SET_REG run, check if the resolver
+         * would pick a multi-pop gadget. If so, emit ONE step
+         * spanning the run; otherwise one step per statement. */
+        if (st->op == RSTMT_SET_REG) {
+            int run = 0;
+            uint32_t needed = 0;
+            for (int j = i;
+                 j < recipe->n && recipe->stmts[j].op == RSTMT_SET_REG;
+                 j++)
+            {
+                int reg = recipe->stmts[j].reg;
+                if (reg < 0 || reg >= REGIDX_MAX_REGS) break;
+                needed |= 1u << reg;
+                run++;
+            }
+            const regidx_multi_t *mp = NULL;
+            if (run >= 2) {
+                mp = regidx_find_multi(index, needed, /*committed=*/0, 1);
+                if (!mp) mp = regidx_find_multi(index, needed, 0, 0);
+            }
+            if (mp) {
+                k++;
+                uint32_t bump = mp->stack_consumed;
+                sp_total += bump;
+                fprintf(out,
+                    "; step %d  — multi-pop gadget 0x%" PRIx64
+                    " covers %d recipe regs  (sp += %u)\n",
+                    k, mp->addr, run, (unsigned)bump);
+                declare_step(out, nregs, k);
+                assert_sp_bump(out, k, bump);
+
+                /* Each popped register either gets a recipe literal
+                 * or — for the subset-cover padding regs — a
+                 * symbolic slot. Writes_mask covers both. */
+                for (int pi = 0; pi < mp->pop_count; pi++) {
+                    int reg = mp->pop_order[pi];
+                    int matched = -1;
+                    for (int k2 = 0; k2 < run; k2++) {
+                        if (recipe->stmts[i + k2].reg == reg) {
+                            matched = i + k2;
+                            break;
+                        }
+                    }
+                    if (matched >= 0 && recipe->stmts[matched].is_literal) {
+                        fprintf(out,
+                            "(assert (= r%d_%d (_ bv%" PRIu64 " 64)))\n",
+                            reg, k, recipe->stmts[matched].value);
+                    } else {
+                        fprintf(out,
+                            "(declare-const slot%d_r%d (_ BitVec 64))\n"
+                            "(assert (= r%d_%d slot%d_r%d))\n",
+                            k, reg, reg, k, k, reg);
+                    }
+                }
+                copy_unwritten(out, nregs, k, mp->writes_mask);
+                fputc('\n', out);
+                i += run;
+                continue;
+            }
+            /* Fall through: no multi-pop gadget, emit one step per
+             * statement in the run, like v5.1 did. */
+        }
+
+        /* Single-statement step (SET_REG single-pop, SYSCALL, RET). */
+        k++;
+        uint32_t bump = 16;          /* default */
+        if (st->op == RSTMT_SET_REG &&
+            st->reg >= 0 && st->reg < REGIDX_MAX_REGS &&
+            index->counts[st->reg] > 0) {
+            bump = index->stack_consumed[st->reg][0];
+        } else if (st->op == RSTMT_RET) {
+            bump = 8;
+        } else if (st->op == RSTMT_SYSCALL) {
+            bump = 0;
+        }
         sp_total += bump;
 
-        fprintf(out, "; step %d  (sp += %u)\n", k, (unsigned)bump);
-        for (int r = 0; r < nregs; r++) {
-            fprintf(out, "(declare-const r%d_%d (_ BitVec 64))\n", r, k);
-        }
-        fprintf(out,
-            "(declare-const sp_%d (_ BitVec 64))\n"
-            "(assert (= sp_%d (bvadd sp_%d (_ bv%u 64))))\n",
-            k, k, k - 1, (unsigned)bump);
+        fprintf(out, "; step %d  — %s  (sp += %u)\n",
+                k,
+                st->op == RSTMT_SET_REG ? "single-pop" :
+                st->op == RSTMT_SYSCALL ? "syscall"    : "ret",
+                (unsigned)bump);
+        declare_step(out, nregs, k);
+        assert_sp_bump(out, k, bump);
 
         if (st->op == RSTMT_SET_REG) {
             int target = st->reg;
@@ -106,70 +196,52 @@ shrike_smt_emit(const recipe_t *recipe, const regidx_t *index,
                     "(assert (= r%d_%d (_ bv%" PRIu64 " 64)))\n",
                     target, k, st->value);
             } else {
-                /* wildcard — fresh payload-slot constant that
-                 * symbolises the attacker's chosen value. */
                 fprintf(out,
-                    "(declare-const slot%d (_ BitVec 64))\n"
-                    "(assert (= r%d_%d slot%d))\n",
-                    k, target, k, k);
+                    "(declare-const slot%d_r%d (_ BitVec 64))\n"
+                    "(assert (= r%d_%d slot%d_r%d))\n",
+                    k, target, target, k, k, target);
             }
-            for (int r = 0; r < nregs; r++) {
-                if (r == target) continue;
-                fprintf(out, "(assert (= r%d_%d r%d_%d))\n",
-                        r, k, r, k - 1);
-            }
+            copy_unwritten(out, nregs, k, 1u << target);
         } else {
-            /* SYSCALL / RET — GP register state is unchanged for
-             * proof purposes (the actual semantics of syscall /
-             * ret don't model kernel or return-address effects,
-             * deliberately — see DESIGN.md § SMT scope). */
-            for (int r = 0; r < nregs; r++) {
-                fprintf(out, "(assert (= r%d_%d r%d_%d))\n",
-                        r, k, r, k - 1);
-            }
+            copy_unwritten(out, nregs, k, 0);
         }
         fputc('\n', out);
+        i++;
     }
 
-    /* Goals. Two halves:
-     *   1. every literal-valued recipe register holds its requested
-     *      value at the final step.
-     *   2. sp_final = sp_0 + total accumulated bumps. Catches the
-     *      class of pivot-mistake where the synthesizer picked a
-     *      gadget whose stack_consumed didn't add up. */
+    /* Goals. */
     fprintf(out, "; goals — what the recipe promised\n");
-    for (int s = 0; s < recipe->n; s++) {
-        const recipe_stmt_t *st = &recipe->stmts[s];
+    for (int i = 0; i < recipe->n; i++) {
+        const recipe_stmt_t *st = &recipe->stmts[i];
         if (st->op != RSTMT_SET_REG || !st->is_literal) continue;
         fprintf(out,
             "(assert (= r%d_%d (_ bv%" PRIu64 " 64)))\n",
-            st->reg, recipe->n, st->value);
+            st->reg, k, st->value);
     }
     fprintf(out,
         "(assert (= sp_%d (bvadd sp_0 (_ bv%" PRIu64 " 64))))\n",
-        recipe->n, sp_total);
+        k, sp_total);
 
     fputs("\n(check-sat)\n", out);
 
-    /* Provenance — makes the proof file self-explanatory when
-     * a human reads it without re-running shrike. */
-    fprintf(out, "\n; chain provenance (gadget addresses + stack per step)\n");
-    for (int s = 0; s < recipe->n; s++) {
-        const recipe_stmt_t *st = &recipe->stmts[s];
+    /* Provenance. */
+    fprintf(out, "\n; chain provenance (derived from the regidx)\n");
+    for (int i = 0; i < recipe->n; i++) {
+        const recipe_stmt_t *st = &recipe->stmts[i];
         if (st->op == RSTMT_SET_REG &&
             st->reg >= 0 && st->reg < REGIDX_MAX_REGS &&
             index->counts[st->reg] > 0) {
             fprintf(out,
-                "; step %d: r%d <- 0x%" PRIx64 "  (consumes %u bytes)\n",
-                s + 1, st->reg, index->addrs[st->reg][0],
+                "; stmt %d: r%d <- 0x%" PRIx64 "  (gadget consumes %u bytes)\n",
+                i + 1, st->reg, index->addrs[st->reg][0],
                 (unsigned)index->stack_consumed[st->reg][0]);
-        } else if (st->op == RSTMT_SYSCALL &&
-                   index->syscall_count > 0) {
-            fprintf(out, "; step %d: syscall at 0x%" PRIx64 "\n",
-                    s + 1, index->syscall_addrs[0]);
+        } else if (st->op == RSTMT_SYSCALL && index->syscall_count > 0) {
+            fprintf(out, "; stmt %d: syscall at 0x%" PRIx64 "\n",
+                    i + 1, index->syscall_addrs[0]);
         }
     }
-    fprintf(out, "; sp delta total: %" PRIu64 " bytes\n", sp_total);
+    fprintf(out, "; total steps emitted: %d   sp delta: %" PRIu64 " bytes\n",
+            k, sp_total);
 
     return 0;
 }
