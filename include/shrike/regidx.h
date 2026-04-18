@@ -46,6 +46,10 @@ typedef struct {
      * knows which slots correspond to recipe registers vs filler. */
     uint8_t  pop_order[REGIDX_MAX_POP_ORDER];
     uint8_t  pop_count;
+    /* v5.3.0: CET-aware preference bit. Same meaning as the
+     * per-reg endbr_start: set iff the multi-pop gadget's
+     * address is a valid IBT landing pad. */
+    uint8_t  endbr_start;
 } regidx_multi_t;
 
 typedef struct {
@@ -55,15 +59,30 @@ typedef struct {
      * between gadgets whose stack footprint isn't the default 16
      * bytes (e.g. `pop rdi ; pop rsi ; ret` needs 24, not 16). */
     uint32_t   stack_consumed[REGIDX_MAX_REGS][REGIDX_MAX_PER];
+    /* v5.3.0: parallel array for CET landing-pad compatibility.
+     * endbr_start[r][i] == 1 iff addrs[r][i] is the address of a
+     * gadget whose first instruction is ENDBR64 / ENDBR32 (x86)
+     * or BTI c/j/jc (aarch64). When CET-aware mode is on, the
+     * resolver prefers these when picking among multiple gadgets
+     * for the same register — non-endbr gadgets die to the
+     * hardware IBT check at runtime. */
+    uint8_t    endbr_start[REGIDX_MAX_REGS][REGIDX_MAX_PER];
     uint16_t   counts[REGIDX_MAX_REGS];
     uint16_t   machine;
     /* terminator helpers */
     uint64_t   syscall_addrs[REGIDX_MAX_PER];
+    uint8_t    syscall_endbr_start[REGIDX_MAX_PER];
     uint16_t   syscall_count;
 
     /* v1.5.2: multi-pop index. */
     regidx_multi_t multi[REGIDX_MAX_MULTI];
     uint16_t       multi_count;
+
+    /* v5.3.0: summary CET flags for the containing image. Set
+     * by the caller (main.c cet-posture path); the resolver
+     * reads them to decide whether to prefer endbr gadgets. */
+    uint8_t    cet_ibt_required;   /* .note.gnu.property IBT bit */
+    uint8_t    cet_shstk_required; /* .note.gnu.property SHSTK bit */
 } regidx_t;
 
 void regidx_init(regidx_t *ri, uint16_t machine);

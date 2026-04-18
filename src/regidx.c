@@ -12,6 +12,7 @@
 #include <shrike/arm64.h>
 #include <shrike/riscv.h>
 #include <shrike/effect.h>
+#include <shrike/cet.h>
 #include <shrike/elf64.h>
 
 #include <inttypes.h>
@@ -102,9 +103,12 @@ static void add_addr(uint64_t *slots, uint16_t *count, uint64_t addr)
 
 /* v1.5.1: credit a (reg, addr, stack_consumed) tuple. Stack info
  * lets the chain emitter pad payloads correctly for multi-pop
- * gadgets without a second parse pass. */
+ * gadgets without a second parse pass.
+ * v5.3.0: also record endbr_start so CET-aware chain selection
+ * can prefer IBT-landing-pad gadgets when the target has CET on. */
 static void
-regidx_credit(regidx_t *ri, int r, uint64_t addr, uint32_t stack)
+regidx_credit(regidx_t *ri, int r, uint64_t addr, uint32_t stack,
+              int endbr)
 {
     if (r < 0 || r >= REGIDX_MAX_REGS) return;
     if (ri->counts[r] >= REGIDX_MAX_PER) return;
@@ -114,16 +118,17 @@ regidx_credit(regidx_t *ri, int r, uint64_t addr, uint32_t stack)
     uint16_t idx = ri->counts[r]++;
     ri->addrs[r][idx]          = addr;
     ri->stack_consumed[r][idx] = stack;
+    ri->endbr_start[r][idx]    = endbr ? 1 : 0;
 }
 
 /* v1.5.2: record a multi-pop gadget (writes_mask popcount >= 2).
  * Duplicates (same mask + addr) are ignored.
- * v1.5.4: also carry the ordered pop list so the emitter can
- * thread values into the right stack slots and 0xdeadbeef the
- * rest when the gadget covers more regs than the recipe needs. */
+ * v1.5.4: also carry the ordered pop list.
+ * v5.3.0: endbr_start bit for CET-aware selection. */
 static void
 regidx_credit_multi(regidx_t *ri, uint32_t mask, uint64_t addr,
-                    uint32_t stack, const int *order, int order_count)
+                    uint32_t stack, const int *order, int order_count,
+                    int endbr)
 {
     if (ri->multi_count >= REGIDX_MAX_MULTI) return;
     for (uint16_t i = 0; i < ri->multi_count; i++) {
@@ -137,7 +142,8 @@ regidx_credit_multi(regidx_t *ri, uint32_t mask, uint64_t addr,
     int n = order_count > REGIDX_MAX_POP_ORDER
           ? REGIDX_MAX_POP_ORDER : order_count;
     for (int i = 0; i < n; i++) m->pop_order[i] = (uint8_t)order[i];
-    m->pop_count = (uint8_t)n;
+    m->pop_count    = (uint8_t)n;
+    m->endbr_start  = (uint8_t)(endbr ? 1 : 0);
 }
 
 static int is_x86_ret(uint8_t b) { return b == 0xC3; }
@@ -174,15 +180,16 @@ static void observe_x86(regidx_t *ri, const gadget_t *g)
 
     gadget_effect_t ef;
     gadget_effect_compute(g, &ef);
+    int endbr = cet_starts_endbr(g);
 
     for (int i = 0; i < n_regs; i++) {
-        regidx_credit(ri, regs[i], g->vaddr, ef.stack_consumed);
+        regidx_credit(ri, regs[i], g->vaddr, ef.stack_consumed, endbr);
     }
     if (n_regs >= 2) {
         uint32_t mask = 0;
         for (int i = 0; i < n_regs; i++) mask |= 1u << regs[i];
         regidx_credit_multi(ri, mask, g->vaddr, ef.stack_consumed,
-                            regs, n_regs);
+                            regs, n_regs, endbr);
     }
 }
 
@@ -239,15 +246,16 @@ static void observe_a64(regidx_t *ri, const gadget_t *g)
 
     gadget_effect_t ef;
     gadget_effect_compute(g, &ef);
+    int endbr = cet_starts_endbr(g);
 
     for (int i = 0; i < n_regs; i++) {
-        regidx_credit(ri, regs[i], g->vaddr, ef.stack_consumed);
+        regidx_credit(ri, regs[i], g->vaddr, ef.stack_consumed, endbr);
     }
     if (n_regs >= 2) {
         uint32_t mask = 0;
         for (int i = 0; i < n_regs; i++) mask |= 1u << regs[i];
         regidx_credit_multi(ri, mask, g->vaddr, ef.stack_consumed,
-                            regs, n_regs);
+                            regs, n_regs, endbr);
     }
 }
 
@@ -326,15 +334,16 @@ static void observe_rv(regidx_t *ri, const gadget_t *g)
 
     gadget_effect_t ef;
     gadget_effect_compute(g, &ef);
+    int endbr = cet_starts_endbr(g);
 
     for (int i = 0; i < n_regs; i++) {
-        regidx_credit(ri, regs[i], g->vaddr, ef.stack_consumed);
+        regidx_credit(ri, regs[i], g->vaddr, ef.stack_consumed, endbr);
     }
     if (n_regs >= 2) {
         uint32_t mask = 0;
         for (int i = 0; i < n_regs; i++) mask |= 1u << regs[i];
         regidx_credit_multi(ri, mask, g->vaddr, ef.stack_consumed,
-                            regs, n_regs);
+                            regs, n_regs, endbr);
     }
 }
 
@@ -354,7 +363,21 @@ void regidx_observe(regidx_t *ri, const gadget_t *g)
     if (!ri || !g || g->length == 0) return;
 
     if (is_syscall_only(g)) {
-        add_addr(ri->syscall_addrs, &ri->syscall_count, g->vaddr);
+        /* Same dedup logic as add_addr but we also want to
+         * remember whether this specific syscall gadget starts
+         * at an ENDBR landing pad — CET-aware resolver needs
+         * it the same way it needs the per-reg flag. */
+        if (ri->syscall_count < REGIDX_MAX_PER) {
+            int dup = 0;
+            for (uint16_t i = 0; i < ri->syscall_count; i++) {
+                if (ri->syscall_addrs[i] == g->vaddr) { dup = 1; break; }
+            }
+            if (!dup) {
+                uint16_t idx = ri->syscall_count++;
+                ri->syscall_addrs[idx]       = g->vaddr;
+                ri->syscall_endbr_start[idx] = (uint8_t)cet_starts_endbr(g);
+            }
+        }
         return;
     }
 
