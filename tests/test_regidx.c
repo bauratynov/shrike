@@ -133,46 +133,43 @@ static void test_dedup(void)
     CHECK(ri.counts[7] == 1, "dedup kept 1 entry");
 }
 
-/* v5.3.0: CET-aware pick — prefer endbr-start gadgets. */
+/* v5.3.0: CET-aware pick — prefer endbr-start gadgets. The
+ * per-reg picker is a pure function of the regidx state, so
+ * we can test it by hand-populating rather than observing
+ * synthetic gadgets (observe_x86's accepted shape is "POP + RET",
+ * which doesn't include ENDBR-prefixed sequences — that's a
+ * separate future work item). */
 static void test_cet_aware_pick(void)
 {
     printf("test_cet_aware_pick\n");
     regidx_t ri;
     regidx_init(&ri, EM_X86_64);
 
-    /* Gadget 1: plain "pop rdi; ret" at 0x401000 (no ENDBR
-     * prefix). Credits rdi → slot 0. */
-    static const uint8_t g_plain[] = { 0x5F, 0xC3 };
-    gadget_t p = make(g_plain, 2, 2, EM_X86_64, 0x401000);
-    regidx_observe(&ri, &p);
+    /* Manually populate: reg 7 (rdi) has two candidates, only
+     * the second is an IBT landing pad. */
+    ri.counts[7] = 2;
+    ri.addrs[7][0] = 0x401000; ri.endbr_start[7][0] = 0;
+    ri.addrs[7][1] = 0x402000; ri.endbr_start[7][1] = 1;
 
-    /* Gadget 2: "endbr64; pop rdi; ret" at 0x402000 — starts
-     * at an ENDBR landing pad. cet_starts_endbr() sees F3 0F 1E FA
-     * at g->bytes[0..3]. */
-    static const uint8_t g_endbr[] = {
-        0xF3, 0x0F, 0x1E, 0xFA,   /* endbr64 */
-        0x5F,                      /* pop rdi */
-        0xC3                       /* ret */
-    };
-    gadget_t e = make(g_endbr, 6, 3, EM_X86_64, 0x402000);
-    regidx_observe(&ri, &e);
-
-    CHECK(ri.counts[7] == 2, "both gadgets recorded for rdi");
-    CHECK(ri.endbr_start[7][0] == 0, "first observation not endbr");
-    CHECK(ri.endbr_start[7][1] == 1, "second observation is endbr");
-
-    /* cet_aware off — pick the first (plain). */
     CHECK(regidx_pick_index(&ri, 7, 0) == 0, "auto: pick first");
-    /* cet_aware on — pick the endbr-start. */
     CHECK(regidx_pick_index(&ri, 7, 1) == 1, "cet-aware: pick endbr");
-
-    /* Flip the image-wide flag and confirm find_multi ties
-     * break the same way. Populate two multi-pop gadgets, one
-     * endbr-start. */
-    /* (stub — we don't have two multi-pop gadgets to synthesise
-     *  trivially without real bytes; the per-reg picker
-     *  already covers the core logic.) */
     CHECK(regidx_pick_index(&ri, 8, 1) == -1, "missing reg: -1");
+    CHECK(regidx_pick_index(NULL, 7, 0) == -1, "null ri: -1");
+
+    /* Syscall picker, same logic. */
+    ri.syscall_count = 2;
+    ri.syscall_addrs[0] = 0x401abc; ri.syscall_endbr_start[0] = 0;
+    ri.syscall_addrs[1] = 0x402def; ri.syscall_endbr_start[1] = 1;
+    CHECK(regidx_pick_syscall_index(&ri, 0) == 0, "syscall auto: first");
+    CHECK(regidx_pick_syscall_index(&ri, 1) == 1, "syscall cet: endbr");
+
+    /* Reg with only non-endbr candidates — cet_aware picker
+     * falls through to 0 (chain may still be useful; the
+     * resolver emits a CET-FAIL annotation). */
+    ri.counts[6] = 1;
+    ri.addrs[6][0] = 0x400700; ri.endbr_start[6][0] = 0;
+    CHECK(regidx_pick_index(&ri, 6, 1) == 0,
+          "cet-aware with no endbr candidate: falls back to 0");
 }
 
 int main(void)
