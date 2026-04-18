@@ -94,21 +94,19 @@ main(void)
     {
         recipe_t r; r.n = 0;
         regidx_t idx; memset(&idx, 0, sizeof idx);
-        mem = fmemopen(scratch, sizeof scratch, "w");
-        if (!mem) {
-            /* fmemopen absent on this platform — fall back to
-             * tmpfile. */
-            mem = tmpfile();
-            CHECK(mem != NULL);
-        }
+        mem = tmpfile();
+        CHECK(mem != NULL);
+        if (!mem) return 1;
         int rc = shrike_smt_emit(&r, &idx, EM_X86_64, mem);
         CHECK(rc == 0);
         fflush(mem);
         long pos = ftell(mem);
         rewind(mem);
-        size_t n = fread(scratch, 1, (size_t)pos, mem);
+        size_t n = fread(scratch, 1,
+                         (size_t)pos < sizeof scratch
+                            ? (size_t)pos : sizeof scratch,
+                         mem);
         fclose(mem);
-        scratch[n < sizeof scratch ? n : sizeof scratch - 1] = 0;
         CHECK(sanity_check(scratch, n));
     }
 
