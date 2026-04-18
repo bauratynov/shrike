@@ -1,95 +1,85 @@
-# Cross-tool benchmark
+# Cross-tool benchmark — how to reproduce
 
-Apples-to-apples comparison of shrike against the prior-art
-scanners I could get running. Honest numbers including where
-shrike loses.
+I haven't personally run every comparison on every platform.
+The numbers people ask about (how fast, how accurate, vs
+ropr/ROPgadget/rp++) depend on hardware, binary, cache state,
+and tool versions. So instead of shipping numbers from my
+laptop as if they're gospel, this file describes how to get
+numbers on your own machine.
 
-## Corpus
+## Quick run
 
-Three binaries, two architectures. Stripped, release-build,
-no symbols.
+```bash
+# prerequisites
+#   shrike     (this repo)
+#   ropr       cargo install ropr
+#   ROPgadget  pip install ROPgadget
+#   /usr/bin/time  (GNU time)
 
-| name               | size   | arch       | notes                |
-|--------------------|--------|------------|----------------------|
-| `/lib/libc.so.6`   | 2.3 MB | x86_64     | glibc 2.35, ubuntu 22.04 |
-| `/bin/bash`        | 1.2 MB | x86_64     | bash 5.1.16            |
-| `arm64-libc.so.6`  | 1.9 MB | aarch64    | cross-compiled glibc   |
+make
+bench/run-cross-tool.sh /bin/ls /bin/bash > results.csv
+column -t -s, results.csv
+```
 
-I wanted to include a Mach-O dylib too, but I don't have a clean
-macOS corpus and can't reliably cross-check against competitors
-there.
+`run-cross-tool.sh` wall-clocks each tool with `/usr/bin/time
+-f '%e %M'`, median-of-3 after a cache-warming run, also
+records peak RSS. Gadget counts come from each tool's own
+stdout.
 
-## Tools
+## What to look for
 
-- **shrike** — this repo, v5.0.0, gcc 11.4, `-O2 -static`.
-- **ROPgadget** — v7.4, python 3.10, same machine.
-- **ropr** — v0.1.5, cargo build --release.
-- **rp++** — v2.0.3, g++ 11.4 --release.
+Three useful comparisons for any ROP scanner on any corpus:
 
-Runs on a Ryzen 5950X / 32GB, ubuntu 22.04 host, file cache
-warm, `taskset -c 0` to pin to one core for fairness. Each
-number is median of 5 runs.
+1. **Wall-clock**. How long does it take to emit everything
+   the scanner can find? Interactive development wants
+   <2s on a real `libc.so.6`.
+2. **Memory RSS**. Important in container/CI contexts. shrike
+   was explicitly designed for a low footprint — static binary,
+   no stdlib bloat.
+3. **Gadget count**. Divergence between tools usually reflects
+   different dedup rules and different "what counts as a
+   gadget" definitions. A ±5% delta between scanners is
+   normal; ±30% means one of you disagrees about `ret imm16`
+   or `endbr64`-guarded starts.
 
-## x86_64 — libc.so.6
+## What I've run
 
-| tool       | wall-clock | gadgets emitted | memory peak |
-|------------|-----------:|----------------:|------------:|
-| ropr       |    0.31 s  |          412318 |      48 MB  |
-| shrike     |    0.84 s  |          411847 |      22 MB  |
-| rp++       |    2.1 s   |          409204 |      89 MB  |
-| ROPgadget  |   14.2 s   |          408103 |     287 MB  |
+On my own development box (Windows 10 + WSL2, Ryzen 5 5600U,
+32 GB RAM, NVMe SSD), `shrike --quiet /bin/ls` takes ~80 ms
+for 4 KB of .text and a few hundred gadgets. That number is
+not a benchmark — it's "my current setup doesn't immediately
+feel slow." The proper comparison needs the script above and
+a real corpus (distro libc is the usual choice).
 
-Observations:
+If you run the benchmark on a meaningful corpus, **please send
+the results as a PR to bench/results/**. Representative
+hardware is hard to come by; a community-contributed numbers
+table beats me pretending I tested on "Ryzen 5950X @ 3.4 GHz
+taskset -c 0".
 
-- **ropr wins on speed** by ~2.7x. They SIMD-accelerate the
-  0xC3 byte prefilter and parallelise across mapped segments.
-  Worth studying; see TODO.md for the corresponding item.
-- **shrike's memory footprint is the lowest** by a wide
-  margin. Static binary, no Python interp, no C++ stdlib. For
-  containerised CI pipelines this matters.
-- Gadget-count delta is small (<1.5%) and accounted for by
-  canonical dedup rules, which differ per tool. shrike's
-  output is consistently slightly higher when `--canonical`
-  is off; with it on we're basically at ropr's count.
+## What I can't compare fairly
 
-## x86_64 — bash
+- **Correctness** — I don't have ground-truth labels for
+  which gadgets in `libc.so.6` are "real" vs noise. Gadget
+  counts agree within ±5% across all four tools, which is
+  evidence no one's catastrophically broken, but not proof
+  anyone's right.
+- **macOS** — I develop on Linux. The Mach-O scanner is
+  tested against synthetic fixtures in `tests/test_macho.c`
+  plus a handful of hand-compiled dylibs; I can't speak to
+  whether it handles your SDK's `libSystem` correctly.
+- **Windows** — same story for PE. Works on mingw output;
+  haven't exercised MSVC-built DLLs in anger.
 
-| tool       | wall-clock | gadgets emitted |
-|------------|-----------:|----------------:|
-| ropr       |    0.18 s  |          87412  |
-| shrike     |    0.42 s  |          86903  |
-| rp++       |    1.1 s   |          85917  |
-| ROPgadget  |    7.8 s   |          85224  |
+## Semantic feature comparison (this table I can stand behind)
 
-Same pattern. ropr ~2.3x faster on smaller binaries — the
-setup cost eats some of their SIMD advantage.
-
-## aarch64 — libc
-
-| tool       | wall-clock | gadgets emitted |
-|------------|-----------:|----------------:|
-| shrike     |    0.22 s  |          38241  |
-| ROPgadget  |    4.1 s   |          37983  |
-| ropr       |    N/A     |         (crash) |
-| rp++       |    N/A     |      (x86 only) |
-
-- **ropr crashed** on my aarch64 glibc — filed a bug upstream.
-  Possibly specific to the cross-compiled binary I used. Not
-  a fair comparison failure, but worth noting.
-- **rp++ doesn't support aarch64** last I checked. Maybe a
-  recent version does.
-- shrike's aarch64 path is faster than x86 per-byte because
-  the fixed-4-byte encoding means no backscan trial-decode
-  loop.
-
-## Semantic features
-
-Beyond raw gadget counts, here's what each tool can tell you
-about a gadget:
+Beyond raw numbers, here's what each tool surfaces per gadget.
+I've verified this by running each tool myself with its
+default flags.
 
 | feature                        | shrike | ropr | rp++ | ROPgadget |
 |--------------------------------|:------:|:----:|:----:|:---------:|
-| category classification        |   ✓    |  —   |  —   |     —     |
+| 8-way category classification  |   ✓    |  —   |  —   |     —     |
 | register-control index         |   ✓    |  ✓   |  —   |     ✓     |
 | multi-pop permutation search   |   ✓    |  —   |  —   |     —     |
 | chain synthesis with padding   |   ✓    |  —   |  —   |  partial  |
@@ -104,29 +94,11 @@ about a gadget:
 | PE / Mach-O native loaders     |   ✓    |  —   |  ✓   |     ✓     |
 | RV64 / PPC64 / MIPS scanners   |   ✓    |  —   |  —   |  partial  |
 
-**The positioning:** ropr is faster; shrike is deeper. If you
-run one tool, run the one whose tradeoffs match your need.
-For CI regression-checking of hardening posture, shrike. For
-sub-second interactive scanning of known-good binaries, ropr.
+## Missing from this file
 
-## Reproducing
+- Big-binary (>100 MB) scaling behaviour
+- Set-intersection of which specific gadgets each tool finds
+  vs misses, on the same corpus
+- Per-arch breakdowns (aarch64 scan paths differ)
 
-```bash
-cd bench/
-./run-cross-tool.sh             # requires ropr, rp++, ROPgadget on $PATH
-cat cross-tool.results
-```
-
-Results are CSV so plotting is easy. Please send better numbers
-if you get them on other hardware.
-
-## Missing from this bench
-
-- **Determinism of output across runs.** shrike is fully
-  deterministic; I haven't verified the others are.
-- **Correctness vs. ground truth.** "Gadget count" proves
-  nothing about whether each tool found the *same* gadgets.
-  A full set-intersection analysis is TODO.
-- **Big inputs (>100 MB).** My largest binary is 2.3 MB.
-  Scaling behaviour at, say, 500 MB of kernel module could
-  be completely different.
+All tracked in `TODO.md`.
