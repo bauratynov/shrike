@@ -3,6 +3,45 @@
 All notable changes to `shrike` are listed here. Project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.0] — 2026-04-18
+
+**SMT chain-correctness proof emitter (Stage XII).** New
+`--smt` flag emits an SMT-LIB2 proof that the resolved gadget
+chain actually achieves what the recipe asked for. Pipe it to
+`z3 -smt2 -` for a sat/unsat verdict.
+
+Skips Stage X (ecosystem plugins) and Stage XI (exploit
+synthesis) intermediate sprints — those produce tooling
+artefacts that aren't prerequisites for Stage XII's formal
+verification, so we jump straight to the correctness proof
+and queue them as v2.x patch work under the v3.0 release.
+
+### Changes
+- `<shrike/smt.h>` declares `shrike_smt_emit(recipe, index,
+  machine, FILE *)`. Returns 0 on success; writes an SMT2
+  program modelling gadget effects as bitvector transitions.
+- `src/smt.c` ~180 LOC implementation. Per-step SSA state
+  over all GPRs, recipe targets assert literal equality or
+  allocate a fresh `slot_k` payload constant, non-targets
+  copy through. Final goal asserts every literal recipe
+  register has the requested value.
+- `--smt` composes with `--recipe`: `shrike --recipe '...'
+  --smt target.so | z3 -smt2 -` is the canonical invocation.
+  `sat` = chain is correct; `unsat` = synthesizer bug or
+  clobber we failed to filter.
+- Scope: register-state semantics only. Stack and memory
+  modelling are Stage XII v2.6.1 / v2.6.2.
+
+### Example
+
+Recipe `rdi=1; rsi=2; rax=59; syscall` emits SMT2 that a Z3
+instance confirms sat — giving a machine-checkable claim
+anyone can reproduce.
+
+Version bump 2.3.0 → 2.6.0 (skips 2.4/2.5 intermediate
+plugin/exploit-synth sprints; tracked in V3_ROADMAP for
+post-3.0 delivery).
+
 ## [2.3.0] — 2026-04-18
 
 **Dynamic-discovery filter hook (Stage IX opens).** New

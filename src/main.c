@@ -19,6 +19,7 @@
 #include <shrike/version.h>
 #include <shrike/pe.h>
 #include <shrike/macho.h>
+#include <shrike/smt.h>
 
 /* v0.13.0: file-scope pointer so emit_cb can reach the SARIF
  * emitter without changing the gadget_cb signature. */
@@ -321,6 +322,7 @@ int main(int argc, char **argv)
     const char *reached_file = NULL;  /* v2.3.0: address allowlist */
     int         recipe_fmt = 0;       /* v0.12.0 */
     int         sarif_mode = 0;       /* v0.13.0 */
+    int         smt_mode   = 0;       /* v2.6.0: emit SMT proof */
     size_t      sarif_cap  = 1000;    /* v0.13.0 */
     int         pivots_mode = 0;      /* v0.14.0: 1=text, 2=json */
     int         canonical   = 0;      /* v0.15.0 */
@@ -386,6 +388,7 @@ int main(int argc, char **argv)
         } else if (!strcmp(a, "--reg-index-json"))   { reg_index = 3;
         } else if (!strcmp(a, "--recipe") && i + 1 < argc) {
             recipe_src = argv[++i];
+        } else if (!strcmp(a, "--smt"))                      { smt_mode = 1;
         } else if (!strcmp(a, "--sarif"))                    { sarif_mode = 1;
         } else if (!strcmp(a, "--sarif-cap") && i + 1 < argc) {
             sarif_cap = (size_t)strtoull(argv[++i], NULL, 10);
@@ -887,6 +890,9 @@ after_scan:
         if (recipe_parse(recipe_src, &rec, first_arch) < 0) {
             fprintf(stderr, "shrike: bad --recipe syntax\n");
             had_error = 1;
+        } else if (smt_mode) {
+            /* v2.6.0: emit SMT2 proof instead of the chain. */
+            shrike_smt_emit(&rec, &ri, first_arch, stdout);
         } else {
             recipe_format_t fmt = recipe_fmt == 1
                                 ? RECIPE_FMT_PWNTOOLS
