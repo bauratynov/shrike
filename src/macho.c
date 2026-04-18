@@ -37,13 +37,26 @@
 
 #include <stdio.h>
 
-/* Preferred slice for fat/universal binaries. Set by
- * macho_set_preferred_arch(); NULL means "no preference — take
- * the first slice and warn". Module-level state is ugly but
- * matches how sarif_current / pivot_atlas_current thread
- * emitter context through gadget_cb_t callbacks elsewhere in
- * shrike without changing stable API shapes. */
-static uint32_t g_pref_cputype = 0;
+/* Preferred slice for fat/universal binaries.
+ *
+ * The module-global was convenient for the CLI but not
+ * thread-safe — concurrent callers of macho_load racing on
+ * different --mach-o-arch values would clobber each other.
+ * v5.2.0 moves the preference into a thread-local when the
+ * compiler supports it (gcc/clang _Thread_local, MSVC
+ * __declspec(thread)). Bonus: the default-NULL case stays
+ * the same as before. */
+#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+#  define SHRIKE_TLS _Thread_local
+#elif defined(__GNUC__) || defined(__clang__)
+#  define SHRIKE_TLS __thread
+#elif defined(_MSC_VER)
+#  define SHRIKE_TLS __declspec(thread)
+#else
+#  define SHRIKE_TLS       /* fall back to global — rare */
+#endif
+
+static SHRIKE_TLS uint32_t g_pref_cputype = 0;
 
 #define MH64_HDR_SIZE  32
 #define LC_HDR_SIZE    8
