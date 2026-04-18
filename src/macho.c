@@ -149,7 +149,9 @@ parse_fat(elf64_t *e, uint32_t magic)
     if (off == 0 || size == 0)             { errno = EINVAL; return -1; }
     if (!in_bounds(e, off, size))          { errno = EINVAL; return -1; }
 
-    /* Rewrite e->map/size to point at the slice. Parse recurses. */
+    /* Rewrite e->map/size to point at the slice. Parse recurses.
+     * map_base + map_base_size are NOT touched — elf64_close
+     * must munmap the original outer region, not the slice. */
     e->map  = e->map + off;
     e->size = size;
     return parse(e);
@@ -285,9 +287,11 @@ int
 macho_load_buffer(const uint8_t *buf, size_t size, elf64_t *e)
 {
     memset(e, 0, sizeof *e);
-    e->map  = buf;
-    e->size = size;
-    e->owns = 0;
+    e->map           = buf;
+    e->size          = size;
+    e->map_base      = buf;
+    e->map_base_size = size;
+    e->owns          = 0;
     return parse(e);
 }
 
@@ -315,9 +319,11 @@ macho_load(const char *path, elf64_t *e)
     close(fd);
     if (map == MAP_FAILED) return -1;
 
-    e->map  = (const uint8_t *)map;
-    e->size = size;
-    e->owns = 1;
+    e->map           = (const uint8_t *)map;
+    e->size          = size;
+    e->map_base      = e->map;
+    e->map_base_size = size;
+    e->owns          = 1;
 
     int rc = parse(e);
     if (rc < 0) {

@@ -94,9 +94,11 @@ static int parse(elf64_t *e)
 int elf64_load_buffer(const uint8_t *buf, size_t size, elf64_t *out)
 {
     memset(out, 0, sizeof(*out));
-    out->map  = buf;
-    out->size = size;
-    out->owns = 0;
+    out->map           = buf;
+    out->size          = size;
+    out->map_base      = buf;
+    out->map_base_size = size;
+    out->owns          = 0;
     return parse(out);
 }
 
@@ -116,21 +118,19 @@ int elf64_load(const char *path, elf64_t *out)
     close(fd);
     if (map == MAP_FAILED) return -1;
 
-    out->map  = (const uint8_t *)map;
-    out->size = (size_t)st.st_size;
-    out->owns = 1;
+    out->map           = (const uint8_t *)map;
+    out->size          = (size_t)st.st_size;
+    out->map_base      = out->map;
+    out->map_base_size = out->size;
+    out->owns          = 1;
 
     int rc = parse(out);
     if (rc < 0) {
         int saved = errno;
-        int hint  = rc;       /* -2 = PE, -3 = Mach-O */
-        munmap((void *)out->map, out->size);
+        munmap((void *)out->map_base, out->map_base_size);
         memset(out, 0, sizeof(*out));
         errno = saved;
-        /* Pass hint back through errno so callers can give a useful
-         * message without changing the public API. */
         return rc == -2 ? -2 : rc == -3 ? -3 : rc == -4 ? -4 : -1;
-        (void)hint;
     }
     return 0;
 }
@@ -144,9 +144,15 @@ int elf64_load(const char *path, elf64_t *out)
 
 void elf64_close(elf64_t *e)
 {
-    if (!e || !e->map) return;
+    if (!e) return;
 #if !defined(_WIN32)
-    if (e->owns) munmap((void *)e->map, e->size);
+    /* Always munmap from map_base, not map — the Mach-O fat
+     * dispatcher re-points map at a slice inside the outer
+     * mapping, so munmap(map, size) would target the wrong
+     * region. map_base was set once at load time. */
+    if (e->owns && e->map_base) {
+        munmap((void *)e->map_base, e->map_base_size);
+    }
 #endif
     memset(e, 0, sizeof(*e));
 }

@@ -262,9 +262,11 @@ int
 pe_load_buffer(const uint8_t *buf, size_t size, elf64_t *e)
 {
     memset(e, 0, sizeof *e);
-    e->map  = buf;
-    e->size = size;
-    e->owns = 0;
+    e->map           = buf;
+    e->size          = size;
+    e->map_base      = buf;
+    e->map_base_size = size;
+    e->owns          = 0;
     return parse(e);
 }
 
@@ -292,9 +294,11 @@ pe_load(const char *path, elf64_t *e)
     close(fd);
     if (map == MAP_FAILED) return -1;
 
-    e->map  = (const uint8_t *)map;
-    e->size = size;
-    e->owns = 1;
+    e->map           = (const uint8_t *)map;
+    e->size          = size;
+    e->map_base      = e->map;
+    e->map_base_size = size;
+    e->owns          = 1;
 
     int rc = parse(e);
     if (rc < 0) {

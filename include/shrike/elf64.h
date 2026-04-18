@@ -85,6 +85,15 @@ typedef struct {
     size_t           size;
     int              owns;           /* we must munmap on close */
 
+    /* v5.2.0: separate base-of-mmap pointer + size, set once at
+     * load time and never mutated afterwards. Needed because the
+     * Mach-O fat dispatcher re-points e->map at a slice inside the
+     * outer mapping — elf64_close must munmap the original base,
+     * not the slice. For non-fat inputs map_base == map and
+     * map_base_size == size; close works the same either way. */
+    const uint8_t   *map_base;
+    size_t           map_base_size;
+
     const Elf64_Ehdr *ehdr;
     const Elf64_Phdr *phdr;
     size_t            phnum;
