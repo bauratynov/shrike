@@ -3,6 +3,43 @@
 All notable changes to `shrike` are listed here. Project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.0] — 2026-04-18
+
+**Dynamic-discovery filter hook (Stage IX opens).** New
+`--reached-file FILE` flag accepts a text file of
+runtime-reached gadget addresses (one hex address per line) and
+filters shrike's output to only those. Pairs with external
+tracers like `lbr-hunt` — the JSON-Lines trace is turned into a
+plain address list (e.g. `jq -r '.address'`) and piped in.
+
+### Changes
+- `print_ctx_t.reached` — optional `strset_t *` of hex-string
+  addresses. When set, the per-gadget callback drops anything
+  whose vaddr isn't in the set.
+- `main.c` loads `--reached-file` into a freshly-initialised
+  `strset_t`. Both `0xABC...` and bare-hex `ABC...` spellings
+  accepted.
+- `# ` comment lines + blank lines ignored so the file can be
+  produced by tracing scripts that annotate their output.
+
+### Typical usage
+```bash
+# Capture a live ROP chain's branch trace
+lbr-hunt --attach-to target.pid > trace.json
+
+# Turn addresses into shrike's filter file
+jq -r '.address' trace.json > reached.txt
+
+# Filter static scan to "gadgets that actually got reached"
+shrike --reached-file reached.txt target > hot_gadgets.txt
+```
+
+Full `lbr-hunt` integration (parse the trace directly, annotate
+rather than filter) is tracked for v2.3.1. Perf-based coverage
+(Stage IX sprint 2) extends this pattern in v2.3.2.
+
+Version bump 2.2.0 → 2.3.0 (minor — new flag, additive).
+
 ## [2.2.0] — 2026-04-18
 
 **PE Debug Directory parsing.** Stage VIII opens. `pe.c` now

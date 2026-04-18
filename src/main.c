@@ -68,6 +68,9 @@ typedef struct {
     size_t       *buckets;       /* gadgets per 4KB of seg vaddr     */
     size_t        bucket_cap;
     uint64_t      bucket_base;   /* vaddr of bucket[0] */
+    /* v2.3.0 — external reached-address set; when non-NULL, only
+     * gadgets whose vaddr is in the set get emitted. */
+    strset_t     *reached;
 } print_ctx_t;
 
 /* Parse "0x00,0x0a,20" into the bad-byte set. */
@@ -125,6 +128,15 @@ static void emit_cb(const elf64_segment_t *seg,
     if (pc->filter && !strstr(text_line, pc->filter)) return;
     if (pc->regex_set && regexec(&pc->re, text_line, 0, NULL, 0) != 0)
         return;
+
+    /* v2.3.0: --reached-file filters to addresses the runtime
+     * trace observed. Lookup is strset_contains with the same
+     * hex spelling the file uses. */
+    if (pc->reached) {
+        char key[32];
+        snprintf(key, sizeof key, "0x%" PRIx64, g->vaddr);
+        if (!strset_contains(pc->reached, key)) return;
+    }
 
     if (pc->unique) {
         char key[1024];
@@ -306,6 +318,7 @@ int main(int argc, char **argv)
     int         diff_mode = 0;        /* v0.9.0 */
     int         reg_index = 0;        /* v0.10.0 */
     const char *recipe_src = NULL;    /* v0.11.0 */
+    const char *reached_file = NULL;  /* v2.3.0: address allowlist */
     int         recipe_fmt = 0;       /* v0.12.0 */
     int         sarif_mode = 0;       /* v0.13.0 */
     size_t      sarif_cap  = 1000;    /* v0.13.0 */
@@ -394,6 +407,8 @@ int main(int argc, char **argv)
         } else if (!strcmp(a, "--raw-arch") && i + 1 < argc) { raw_arch = argv[++i];
         } else if (!strcmp(a, "--mach-o-arch") && i + 1 < argc) {
             macho_set_preferred_arch(argv[++i]);
+        } else if (!strcmp(a, "--reached-file") && i + 1 < argc) {
+            reached_file = argv[++i];
         } else if (!strcmp(a, "--raw-base") && i + 1 < argc) {
             raw_base = strtoull(argv[++i], NULL, 0);
         } else if ((!strcmp(a, "--format") || !strcmp(a, "-p"))
@@ -518,6 +533,37 @@ int main(int argc, char **argv)
     pc.bad_byte_active       = bad_active;
     if (bad_active) memcpy(pc.bad_byte_set, bad_set, sizeof bad_set);
     strset_init(&pc.seen);
+
+    /* v2.3.0: load --reached-file into a strset of 0x... strings. */
+    strset_t reached_set;
+    if (reached_file) {
+        strset_init(&reached_set);
+        FILE *rf = fopen(reached_file, "r");
+        if (!rf) {
+            fprintf(stderr, "shrike: --reached-file %s: %s\n",
+                    reached_file, strerror(errno));
+            return 1;
+        }
+        char line[64];
+        while (fgets(line, sizeof line, rf)) {
+            /* trim trailing whitespace */
+            size_t n = strlen(line);
+            while (n && (line[n - 1] == '\n' || line[n - 1] == '\r' ||
+                         line[n - 1] == ' ' || line[n - 1] == '\t'))
+                line[--n] = '\0';
+            if (!n || line[0] == '#') continue;
+            /* Normalise: accept bare hex without 0x prefix too. */
+            char normalised[32];
+            if (line[0] == '0' && (line[1] == 'x' || line[1] == 'X')) {
+                snprintf(normalised, sizeof normalised, "%s", line);
+            } else {
+                snprintf(normalised, sizeof normalised, "0x%s", line);
+            }
+            strset_add(&reached_set, normalised);
+        }
+        fclose(rf);
+        pc.reached = &reached_set;
+    }
 
     /* v0.10.0 / v0.11.0: enable the register indexer when either a
      * --reg-index-* flag is set OR a --recipe is being resolved. In
