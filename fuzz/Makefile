@@ -28,10 +28,11 @@ HARNESSES_AFL := fuzz_xdec fuzz_pe fuzz_macho
 
 all: libfuzzer
 
-libfuzzer: CFLAGS += -fsanitize=fuzzer,address,undefined
+libfuzzer: CFLAGS += -fsanitize=fuzzer,address,undefined \
+                     -DSHRIKE_FUZZ_LIBFUZZER
 libfuzzer: $(HARNESSES_LF)
 
-afl: CFLAGS += -DAFL_PERSISTENT
+afl: CFLAGS += -DAFL_PERSISTENT -DSHRIKE_FUZZ_AFL
 afl: $(HARNESSES_AFL)
 
 # libFuzzer drivers. Each harness links only the specific

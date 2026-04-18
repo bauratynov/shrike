@@ -57,15 +57,25 @@ one_shot(const uint8_t *data, size_t size)
     /* No elf64_close — buffer is caller-owned, nothing to unmap. */
 }
 
-#if defined(LLVMFuzzerTestOneInput_override) || defined(__clang__)
+/* Entry-point selection:
+ *   SHRIKE_FUZZ_LIBFUZZER — linked with libFuzzer (provides main);
+ *                           we only define LLVMFuzzerTestOneInput.
+ *   SHRIKE_FUZZ_AFL       — AFL++ persistent-mode loop main.
+ *   else                  — standalone: read one file per argv.
+ *
+ * The fuzz/Makefile sets SHRIKE_FUZZ_LIBFUZZER for the libfuzzer
+ * target and SHRIKE_FUZZ_AFL for the afl target. Previously we
+ * keyed off __clang__, which defined LLVMFuzzerTestOneInput plus
+ * our own main() on every clang build — libFuzzer's own main
+ * then collided with ours at link time. */
+
+#if defined(SHRIKE_FUZZ_LIBFUZZER)
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 {
     one_shot(data, size);
     return 0;
 }
-#endif
-
-#ifdef __AFL_COMPILER
+#elif defined(SHRIKE_FUZZ_AFL)
 int main(void)
 {
     uint8_t buf[1 << 20];    /* 1 MiB cap — bigger PEs are unrealistic as fuzz inputs */
@@ -77,9 +87,8 @@ int main(void)
     return 0;
 }
 #else
-/* Stand-alone fallback for running outside any fuzz driver —
- * reads one file per argv entry and calls one_shot. */
-#include <stdio.h>
+/* Stand-alone fallback — reads one file per argv entry. */
+# include <stdio.h>
 int main(int argc, char **argv)
 {
     for (int i = 1; i < argc; i++) {

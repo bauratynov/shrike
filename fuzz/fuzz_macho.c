@@ -48,15 +48,15 @@ one_shot(const uint8_t *data, size_t size)
     }
 }
 
-#if defined(__clang__) && !defined(__AFL_COMPILER)
+/* See fuzz_pe.c for the entry-point selection rationale. */
+
+#if defined(SHRIKE_FUZZ_LIBFUZZER)
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 {
     one_shot(data, size);
     return 0;
 }
-#endif
-
-#ifdef __AFL_COMPILER
+#elif defined(SHRIKE_FUZZ_AFL)
 int main(void)
 {
     uint8_t buf[1 << 20];
@@ -68,7 +68,7 @@ int main(void)
     return 0;
 }
 #else
-#include <stdio.h>
+# include <stdio.h>
 int main(int argc, char **argv)
 {
     for (int i = 1; i < argc; i++) {
