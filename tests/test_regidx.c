@@ -146,30 +146,47 @@ static void test_cet_aware_pick(void)
     regidx_init(&ri, EM_X86_64);
 
     /* Manually populate: reg 7 (rdi) has two candidates, only
-     * the second is an IBT landing pad. */
+     * the second is an IBT landing pad. With cet_ibt_required
+     * off, scoring is flat → first wins. With it on, the
+     * endbr-start candidate wins. */
     ri.counts[7] = 2;
     ri.addrs[7][0] = 0x401000; ri.endbr_start[7][0] = 0;
     ri.addrs[7][1] = 0x402000; ri.endbr_start[7][1] = 1;
 
-    CHECK(regidx_pick_index(&ri, 7, 0) == 0, "auto: pick first");
-    CHECK(regidx_pick_index(&ri, 7, 1) == 1, "cet-aware: pick endbr");
-    CHECK(regidx_pick_index(&ri, 8, 1) == -1, "missing reg: -1");
+    ri.cet_ibt_required = 0;
+    CHECK(regidx_pick_index(&ri, 7, 0) == 0, "no mitigations: first");
+    ri.cet_ibt_required = 1;
+    CHECK(regidx_pick_index(&ri, 7, 0) == 1, "IBT on: prefer endbr");
+    CHECK(regidx_pick_index(&ri, 8, 0) == -1, "missing reg: -1");
     CHECK(regidx_pick_index(NULL, 7, 0) == -1, "null ri: -1");
 
     /* Syscall picker, same logic. */
     ri.syscall_count = 2;
     ri.syscall_addrs[0] = 0x401abc; ri.syscall_endbr_start[0] = 0;
     ri.syscall_addrs[1] = 0x402def; ri.syscall_endbr_start[1] = 1;
-    CHECK(regidx_pick_syscall_index(&ri, 0) == 0, "syscall auto: first");
-    CHECK(regidx_pick_syscall_index(&ri, 1) == 1, "syscall cet: endbr");
+    CHECK(regidx_pick_syscall_index(&ri, 0) == 1,
+          "syscall pick prefers endbr");
 
-    /* Reg with only non-endbr candidates — cet_aware picker
-     * falls through to 0 (chain may still be useful; the
-     * resolver emits a CET-FAIL annotation). */
+    /* Reg with only non-endbr candidates — scoring gives 0 to
+     * every candidate, first wins. Resolver emits a FAIL tag. */
     ri.counts[6] = 1;
     ri.addrs[6][0] = 0x400700; ri.endbr_start[6][0] = 0;
-    CHECK(regidx_pick_index(&ri, 6, 1) == 0,
-          "cet-aware with no endbr candidate: falls back to 0");
+    CHECK(regidx_pick_index(&ri, 6, 0) == 0,
+          "IBT on but no candidate: falls to 0");
+
+    /* v5.4.0: SHSTK + PAC scoring. When shstk + pac flags are
+     * set on regidx, candidates with shstk_safe=1 + pac_hostile=0
+     * beat those without. Highest-scoring combo wins. */
+    ri.cet_ibt_required   = 0;   /* isolate shstk/pac */
+    ri.cet_shstk_required = 1;
+    ri.pac_required       = 1;
+    ri.counts[5] = 2;
+    ri.addrs[5][0] = 0x410000;
+    ri.shstk_safe[5][0]  = 0; ri.pac_hostile[5][0] = 1;
+    ri.addrs[5][1] = 0x420000;
+    ri.shstk_safe[5][1]  = 1; ri.pac_hostile[5][1] = 0;
+    CHECK(regidx_pick_index(&ri, 5, 0) == 1,
+          "shstk+pac: highest-score candidate wins");
 }
 
 int main(void)
