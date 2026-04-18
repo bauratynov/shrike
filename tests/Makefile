@@ -7,10 +7,7 @@ CFLAGS   += $(CSTD) $(WARN) $(OPT) -I../include \
 
 LIB := ../libshrike.a
 
-TESTS := test_xdec test_scan test_cet test_arm64 test_category test_regidx test_recipe test_version test_pe test_macho test_riscv test_effect test_api
-# test_smt temporarily removed — debugging CI log receiver is down,
-# so I can't see which test is actually failing. Re-added once
-# logs are back or local reproduction is available.
+TESTS := test_xdec test_scan test_cet test_arm64 test_category test_regidx test_recipe test_version test_pe test_macho test_riscv test_effect test_api test_smt
 
 .PHONY: all run clean
 
