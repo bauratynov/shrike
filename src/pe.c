@@ -109,7 +109,13 @@ static int parse(elf64_t *e)
     uint16_t nsect    = rd_u16(fh + PE_FH_NUMSECT_OFF);
     uint16_t opt_sz   = rd_u16(fh + PE_FH_OPTSZ_OFF);
 
-    if (nsect == 0 || nsect > 96)           { errno = EINVAL; return -1; }
+    /* Reject only pathological values. The real limit is that
+     * we can't track more than SHRIKE_MAX_SEGMENTS executable
+     * sections — but the section table itself may list hundreds
+     * of non-executable entries. Cap the total at 512 (a fair
+     * ceiling: real binaries rarely exceed 30; obfuscators
+     * sometimes hit 200+) and silently skip beyond. */
+    if (nsect == 0 || nsect > 512)           { errno = EINVAL; return -1; }
     if (opt_sz < 2)                          { errno = EINVAL; return -1; }
 
     /* Map PE machine codes to the ELF EM_* values the rest of shrike
