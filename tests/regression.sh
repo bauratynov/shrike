@@ -21,7 +21,7 @@ if [[ ! -x ./shrike ]]; then
     exit 2
 fi
 
-./tests/fixtures/gen.sh > /dev/null
+bash tests/fixtures/gen.sh > /dev/null
 
 fails=0
 
