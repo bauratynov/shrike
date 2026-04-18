@@ -92,20 +92,33 @@ docker run --rm -v /bin:/host shrike:1.0.0 --quiet /host/ls
 
 ```
 shrike/
-├── src/            scanners, classifiers, formatters, CLI
-├── include/        public headers
-├── tests/          35+ unit tests + integration harness
-├── fuzz/           AFL++ / libFuzzer drivers + seed corpus
-├── bench/          repeatable performance baseline
-├── docs/           shrike(1) man page, launch kit, hero SVG
-├── examples/       10 common recipes
-├── plugins/ghidra/ companion import script
-├── packaging/      Dockerfile, debian/, shrike.spec
-├── tools/          shrike-serve.sh HTTP gateway
-├── .github/        CI + release workflows
-├── ROADMAP.md      29-sprint plan (v0.10 → v1.0) — complete
-└── STABILITY.md    1.x API contract
+├── src/                scanners, classifiers, formatters, CLI
+├── include/shrike/     public headers (<shrike/shrike.h> is the 3.x ABI)
+├── python/             pip-installable Python bindings
+├── tests/              unit tests + fixture regression + integration
+├── fuzz/               libFuzzer + AFL++ harnesses (xdec, pe, macho)
+├── bench/              reproducible cross-tool benchmark
+├── docs/               man page, migration guides, SVG hero
+│   └── book/           reading path (01-intro → 04-verification)
+├── examples/
+│   └── recipes/        per-arch execve / pivots / ...
+├── plugins/
+│   ├── ghidra/         import script
+│   ├── ida/            shrike_importer.py
+│   └── binja/          shrike_importer.py
+├── packaging/          Dockerfile, debian/, shrike.spec, shrike.pc.in
+├── tools/              lbr-ingest.py, shrike-gdb.py, shrike-serve.sh
+├── .github/            CI + release workflows
+├── DESIGN.md           decision log (why libbfd was rejected, etc.)
+├── LIMITATIONS.md      what doesn't work, what won't, what might
+├── TODO.md             rough dated notes (not a roadmap)
+├── V2_ROADMAP.md       v1.1.0 → v2.0.0 (complete)
+├── V3_ROADMAP.md       v2.1.0 → v3.0.0 (core delivered)
+└── STABILITY.md        3.x contract
 ```
+
+New readers: start with [docs/book/01-intro.md](docs/book/01-intro.md).
+Upgrading from 1.x: [docs/migration-1-to-2.md](docs/migration-1-to-2.md).
 
 ## Roadmap
 

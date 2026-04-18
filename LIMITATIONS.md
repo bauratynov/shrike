@@ -9,8 +9,10 @@ before filing a bug.
 - **No 16-bit addressing forms** in the operand decoder. If your
   binary has `mov ax, [bx+si]` shapes, they render as
   `db 0x?, 0x?, ...`. Who's emitting 16-bit addressing in 2026?
-- **No VEX/EVEX prefixes.** AVX gadgets render as `.byte` dump.
-  Hits modern crypto libraries hard (openssl uses AVX heavily).
+- **VEX prefix is length-only.** We parse C4 / C5 correctly so
+  AVX gadgets don't truncate the scanner mid-gadget (fixed in
+  5.1), but mnemonic rendering for VEX opcodes still falls
+  back to `.byte` dump. EVEX (AVX-512) not parsed at all.
 - **FS/GS segment prefixes** not normalised in output. A gadget
   `mov rax, fs:[0x28]` renders without the `fs:` qualifier.
 
@@ -39,10 +41,10 @@ before filing a bug.
   LR registers are architectural state we don't model.
 
 ### MIPS
-- **Delay slot ignored.** This is not a bug, it's a scope
-  decision. MIPS gadgets end at the branch itself. Chain
-  consumers must budget one payload slot for the delay-slot
-  instruction manually. Fix tracked as V5 sprint work.
+- **Delay slot IS now included** (5.1) — gadgets that end in
+  jr / jalr extend one instruction past the branch. Chain
+  consumers don't need to budget a delay slot anymore.
+  Other terminators (syscall, eret) stay delay-slot-free.
 - **No microMIPS / MIPS16e.** 32-bit classical MIPS encoding
   only.
 
@@ -76,13 +78,15 @@ before filing a bug.
 
 ### Mach-O
 - **32-bit Mach-O (MH_MAGIC)** rejected. 64-bit only for v1.x.
-- **Fat binary disagreement tolerated.** If `fat_arch.cputype`
-  says `arm64` but the inner `mach_header.cputype` says
-  `x86_64`, the inner wins and we trust it. Apple's own tools
-  enforce agreement; a divergent fat is malformed.
-- **arm64e PAC** gadgets appear as authorisation-heavy
-  sequences we don't dispatch. Scanning works, semantics
-  don't.
+- **Fat binary disagreement REJECTED** (5.1 change). If
+  `fat_arch.cputype` doesn't match the inner
+  `mach_header.cputype`, we refuse the binary as malformed.
+  Apple's own tools enforce agreement.
+- **arm64e PAC addresses now stripped** (5.1) so reported
+  VAs are the plain 48-bit form WinDbg / IDA show. The
+  PAC-specific opcodes (AUTIA, PACIA, ...) still render
+  as `.word` fallback — scanning works, opcode-level
+  semantics don't.
 
 ## Chain synthesizer
 

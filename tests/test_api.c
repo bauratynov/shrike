@@ -86,6 +86,7 @@ main(void)
     CHECK(it != NULL);
 
     int seen = 0;
+    int saw_ret = 0;
     const shrike_gadget_t *g;
     while ((g = shrike_iter_next(it)) != NULL) {
         seen++;
@@ -98,7 +99,16 @@ main(void)
          * verify it's a non-empty string. */
         const char *d = shrike_gadget_disasm(g);
         CHECK(d != NULL && d[0] != '\0');
+        /* Category must be one of the enum values, and for a
+         * single-byte ret we expect RET_ONLY. */
+        shrike_category_t cat = shrike_gadget_category(g);
+        CHECK(cat >= SHRIKE_CAT_OTHER && cat <= SHRIKE_CAT_INDIRECT);
+        if (cat == SHRIKE_CAT_RET_ONLY) saw_ret = 1;
+        /* Instruction count plausibility: single-byte ret is 1
+         * instruction. Multi-byte backscan gadgets may be more. */
+        CHECK(shrike_gadget_instruction_count(g) >= 1);
     }
+    CHECK(saw_ret);   /* at least one gadget classified as ret_only */
     /* 16 bytes of C3 → at least 16 "ret" terminator positions;
      * potentially more since each position can emit multiple
      * gadget prefixes up to max_insn. With max_insn=1 (set

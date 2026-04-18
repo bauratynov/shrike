@@ -1,5 +1,14 @@
 # shrike 3.0 — 29-sprint roadmap
 
+> **Status (as of 5.x polish pass):** Stage VII complete,
+> Stage VIII Mach-O arm64e + MIPS delay-slot delivered in 5.x
+> patch bumps, Stage IX `--reached-file` delivered, Stage XII
+> SMT register+stack semantics delivered. Remaining items
+> (PE32, PDB enrichment, symbolic executor, Coq export,
+> shellcode primitive library, SIMD AVX2 scanner, shrike-book
+> chapters 5-6) are explicitly out of scope for the 5.x line
+> and get revisited when a real use case demands.
+
 **From v2.0.0 (stable C API, native loaders, chain synthesis,
 Python binding) → v3.0.0 (semantic analysis, new architectures,
 dynamic discovery, exploit synthesis, formal verification).**

@@ -3,6 +3,65 @@
 All notable changes to `shrike` are listed here. Project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.1.0] — 2026-04-18
+
+**Polish pass.** No new headline features — focused on fixing
+things that were subtly broken, making the code honest where
+it was loose, and documenting decisions.
+
+### Fixed
+- `smt` emitter reads real `stack_consumed` from the regidx
+  per step + adds a final `sp_final = sp_0 + total` goal, so
+  pivot-accounting mistakes surface as SMT unsat.
+- `scan_riscv` folded its separate bare-terminator emit into
+  the main loop (offset-from-0), matching `scan_x86`'s shape
+  and eliminating duplicated-emit risk.
+- `insn_effect_decode` grew aarch64 MOV/LDR/LDP + RV64 ld/addi
+  generalisations so `gadget_is_dispatcher` actually fires on
+  non-x86 binaries. JOP/COP detection previously silently
+  returned 0 there.
+- `render_rm_mem` reads disp from `length - imm_bytes -
+  disp_bytes`, not `length - disp_bytes`. Latent bug, would
+  have bit us the moment we wired ADD r/m, imm8 through the
+  function.
+- `scan_mips` handles branch-delay slots: gadgets ending in
+  jr/jalr extend one instruction past the branch.
+- `macho.c` detects arm64e via cpusubtype + masks PAC bits
+  from reported VAs (48-bit clean addresses).
+- VEX C4/C5 prefix length-decoded in xdec so AVX gadgets
+  don't truncate scanning mid-gadget.
+
+### Added
+- **SSE2 prefilter** in `scan_x86` — 16-byte-window cmpeq
+  movemask for terminator starter bytes. Falls back to
+  scalar when SHRIKE_SCALAR=1 or non-x86 host.
+- ALU reg/mem rendering for ADD / OR / ADC / SBB / AND /
+  SUB / XOR / CMP in one table-driven loop.
+- aarch64 LDR (immediate, unsigned offset, 64-bit) render.
+- **Fuzz harnesses** for PE (`fuzz_pe.c`) and Mach-O
+  (`fuzz_macho.c`) loaders. libFuzzer + AFL++ targets.
+- **Regression test infra** — `tests/fixtures/gen.sh` +
+  `tests/regression.sh` + CI job. Cross-arch fixtures
+  built from in-tree source, gadget-count sanity ranges
+  asserted. Binaries not committed (toolchain-dependent).
+- **`bench/run-cross-tool.sh`** — actually-runnable
+  benchmark script. Replaces the fabricated numbers the
+  earlier bench/cross-tool.md shipped with.
+- **`docs/book/`** — 4 short chapters (intro, taxonomy,
+  chains, verification) + README reading path.
+- **`DESIGN.md`**, **`LIMITATIONS.md`**, **`TODO.md`** —
+  decision log, honest limits, open items.
+
+### Stabilised
+- `<shrike/effect.h>`, `<shrike/insn_effect.h>`,
+  `<shrike/smt.h>` annotated `@stable_since 5.1` in their
+  header comments. 5.x contract freeze applies.
+
+### ABI
+- soname stays `libshrike.so.5` — no breaking changes.
+- Added fields to `elf64_t` (macho_arm64e). Struct grows;
+  layout offsets of existing fields unchanged.
+
 ## [5.0.0] — 2026-04-18
 
 **Formal verification depth + PowerPC 64 + MIPS scanners.**
