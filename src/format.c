@@ -132,15 +132,29 @@ render_rm_mem(strbuf_t *sb, const xdec_info_t *info, const uint8_t *buf)
         }
     }
 
-    /* Read the displacement from the tail of the instruction. */
+    /* Read the displacement. In the ModR/M encoding, disp comes
+     * BEFORE any immediate bytes, so the position is
+     * info->length - imm_bytes - disp_bytes, not
+     * info->length - disp_bytes. Got this wrong originally;
+     * wasn't noticed because the opcodes wired through here
+     * (MOV 0x8B/0x89, LEA 0x8D) have no immediate. Fixing pre-
+     * emptively so ADD/SUB r/m, imm8 forms can land without
+     * another trip through this function.
+     *
+     * Layout:
+     *   opcode  modrm  [sib]  [disp]  [imm]
+     *            └──────┬──────┘
+     *                   bytes whose end is info->length - imm
+     */
     int32_t disp = 0;
+    int     disp_end = info->length - info->imm_bytes;
     if (info->disp_bytes == 1) {
-        disp = (int8_t)buf[info->length - 1];
+        disp = (int8_t)buf[disp_end - 1];
     } else if (info->disp_bytes == 4) {
-        disp = (int32_t)((uint32_t)buf[info->length - 4] |
-                         ((uint32_t)buf[info->length - 3] << 8) |
-                         ((uint32_t)buf[info->length - 2] << 16) |
-                         ((uint32_t)buf[info->length - 1] << 24));
+        disp = (int32_t)((uint32_t)buf[disp_end - 4] |
+                         ((uint32_t)buf[disp_end - 3] << 8) |
+                         ((uint32_t)buf[disp_end - 2] << 16) |
+                         ((uint32_t)buf[disp_end - 1] << 24));
     }
 
     sb_printf(sb, "[");
