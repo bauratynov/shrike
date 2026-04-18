@@ -109,6 +109,13 @@ typedef struct {
      * Debug Directory. Zero for non-PE inputs. */
     uint32_t          pe_dll_chars_ex;
     char              pe_pdb_path[260];
+
+    /* v5.0 polish: Mach-O arm64e PAC-enabled image. When set,
+     * the gadget renderer strips the top bits of addresses it
+     * reports (PAC signs pointers with bits [54:43]). Callers
+     * that care about the raw signed value can re-introduce
+     * the bits from the binary's PAC discriminator. */
+    int               macho_arm64e;
 } elf64_t;
 
 /* mmap + parse + fill the segs[] array with executable PT_LOAD entries.

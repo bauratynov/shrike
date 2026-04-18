@@ -172,9 +172,17 @@ static int parse(elf64_t *e)
     if (magic != MH_MAGIC_64) { errno = EINVAL; return -1; }
 
     uint32_t cputype    = rd_u32(e->map + MH_CPUTYPE_OFF);
+    uint32_t cpusubtype = rd_u32(e->map + MH_CPUSUBTYPE_OFF);
     uint32_t filetype   = rd_u32(e->map + MH_FILETYPE_OFF);
     uint32_t ncmds      = rd_u32(e->map + MH_NCMDS_OFF);
     uint32_t sizeofcmds = rd_u32(e->map + MH_SIZEOFCMDS_OFF);
+
+    /* arm64e (Apple Silicon PAC) uses cpusubtype with the low
+     * byte == CPU_SUBTYPE_ARM64E. Record the flag so the
+     * renderer can strip PAC bits from reported addresses. */
+    e->macho_arm64e =
+        (cputype == CPU_TYPE_ARM64 &&
+         (cpusubtype & ~CPU_SUBTYPE_MASK) == CPU_SUBTYPE_ARM64E);
 
     switch (cputype) {
     case CPU_TYPE_X86_64: e->machine = EM_X86_64;  break;
@@ -232,10 +240,22 @@ static int parse(elf64_t *e)
             uint64_t scan = filesize;
             if (vmsize && vmsize < scan) scan = vmsize;
 
+            /* arm64e PAC: strip the upper 16 bits of vmaddr so
+             * reported addresses are disassembler-ready. The
+             * actual PAC signature is introduced at pointer-use
+             * time by AUT* instructions, not baked into the
+             * segment load address — masking here just stops
+             * us reporting addresses with the pointer-auth
+             * diversifier bits set. */
+            uint64_t reported = vmaddr;
+            if (e->macho_arm64e) {
+                reported &= 0x0000FFFFFFFFFFFFull;
+            }
+
             elf64_segment_t *s = &e->segs[e->nseg++];
             s->bytes   = e->map + fileoff;
             s->size    = (size_t)scan;
-            s->vaddr   = vmaddr;
+            s->vaddr   = reported;
             s->flags   = 0;
             if (initprot & VM_PROT_READ)    s->flags |= PF_R;
             if (initprot & VM_PROT_WRITE)   s->flags |= PF_W;
