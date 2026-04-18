@@ -104,6 +104,24 @@ jobs:
           # Confirm we actually dynamically linked, not statically.
           ldd /tmp/consumer | grep -E 'libshrike\.so\.[0-9]+'
 
+  regression-fixtures:
+    name: regression — per-arch fixtures in expected ranges
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: install cross-compilers (best-effort)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+              gcc-aarch64-linux-gnu \
+              gcc-riscv64-linux-gnu \
+              gcc-mingw-w64-x86-64 \
+              || true
+      - name: build shrike
+        run: make
+      - name: run regression
+        run: bash tests/regression.sh
+
   cross-arch:
     name: cross-arch matrix (${{ matrix.arch }})
     runs-on: ubuntu-24.04
