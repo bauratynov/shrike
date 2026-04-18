@@ -23,13 +23,41 @@
 #include <shrike/elf64.h>
 
 /* SSE2 is available on every real x86-64 host; wrap its use so
- * non-x86 cross-builds keep working with the scalar path. */
+ * non-x86 cross-builds keep working with the scalar path.
+ *
+ * AVX2 would give us 32-byte windows and roughly double the
+ * prefilter throughput on top of SSE2, but SSE2 is part of
+ * x86_64 baseline (Microsoft's ABI mandates it, gcc -m64
+ * enables it by default) while AVX2 is a runtime-detect story.
+ * Keep it SSE2-only until we have a benchmark that shows AVX2
+ * actually moving the needle on real libc sizes — memory
+ * bandwidth dominates on large inputs and extra lanes don't
+ * help there. */
 #if defined(__SSE2__)
 # include <emmintrin.h>
 # define SHRIKE_HAVE_SSE2 1
 #else
 # define SHRIKE_HAVE_SSE2 0
 #endif
+
+/* Environment override to force the scalar path — useful for
+ * A/B benchmarking and for debugging prefilter vs detailed-
+ * check divergence. Set SHRIKE_SCALAR=1 in the environment. */
+#include <stdlib.h>
+static int
+x86_want_sse2(void)
+{
+#if SHRIKE_HAVE_SSE2
+    static int cached = -1;
+    if (cached < 0) {
+        const char *env = getenv("SHRIKE_SCALAR");
+        cached = (env && env[0] && env[0] != '0') ? 0 : 1;
+    }
+    return cached;
+#else
+    return 0;
+#endif
+}
 
 #include <string.h>
 
@@ -139,9 +167,10 @@ static size_t scan_x86(const elf64_segment_t *seg,
     /* Fast path: SSE2 prefilter. Walk in 16-byte windows; for
      * every candidate position call into the detailed checker.
      * Tail bytes (seg->size < 16 or remainder after last full
-     * window) fall through to the scalar loop below. */
+     * window) fall through to the scalar loop below. Honours
+     * SHRIKE_SCALAR=1 for A/B testing. */
     size_t t = 0;
-    if (seg->size >= 16) { size_t vec_end = seg->size - 16;
+    if (x86_want_sse2() && seg->size >= 16) { size_t vec_end = seg->size - 16;
     for (; t <= vec_end; t += 16) {
         uint32_t mask = sse2_candidate_mask(seg->bytes + t);
         while (mask) {
