@@ -106,6 +106,10 @@ capture_cb(const elf64_segment_t *seg, const gadget_t *g, void *ctx_v)
     format_gadget_render(g, s->disasm, sizeof s->disasm);
 }
 
+/* Try every loader in turn. elf64_load returns -2/-3/-4 as
+ * "detected this other format" sentinels; we treat those as
+ * dispatch hints, not errors. Everything else collapses to -1
+ * so callers see a consistent errno-style failure. */
 static int
 load_dispatch(const char *path, const uint8_t *buf, size_t size,
               elf64_t *out)
@@ -113,16 +117,18 @@ load_dispatch(const char *path, const uint8_t *buf, size_t size,
     int rc;
     if (path) {
         rc = elf64_load(path, out);
-        if (rc == 0) return 0;
-        if (rc == -2) return pe_load(path, out);
-        if (rc == -3) return macho_load(path, out);
-        return rc;
+        if (rc == 0)  return 0;
+        if (rc == -2) return pe_load(path, out) == 0 ? 0 : -1;
+        if (rc == -3) return macho_load(path, out) == 0 ? 0 : -1;
+        /* -4 (RISC-V was once here; now unreachable) or any
+         * other negative return surfaces as the generic error. */
+        return -1;
     }
     rc = elf64_load_buffer(buf, size, out);
-    if (rc == 0) return 0;
-    if (rc == -2) return pe_load_buffer(buf, size, out);
-    if (rc == -3) return macho_load_buffer(buf, size, out);
-    return rc;
+    if (rc == 0)  return 0;
+    if (rc == -2) return pe_load_buffer(buf, size, out) == 0 ? 0 : -1;
+    if (rc == -3) return macho_load_buffer(buf, size, out) == 0 ? 0 : -1;
+    return -1;
 }
 
 /* -------------------- public API -------------------- */

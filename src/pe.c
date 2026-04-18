@@ -18,6 +18,7 @@
 
 #include <shrike/pe.h>
 #include <shrike/elf64.h>
+#include <shrike/warning.h>
 
 #include <errno.h>
 #include <fcntl.h>
@@ -169,8 +170,19 @@ static int parse(elf64_t *e)
     if (!in_bounds(e, sect_off, sect_tbl))  { errno = EINVAL; return -1; }
 
     e->nseg = 0;
+    int truncated = 0;
     for (uint16_t i = 0; i < nsect; i++) {
-        if (e->nseg >= SHRIKE_MAX_SEGMENTS) break;
+        if (e->nseg >= SHRIKE_MAX_SEGMENTS) {
+            if (!truncated) {
+                shrike_warn(
+                    "shrike: PE has more than %d executable sections; "
+                    "scanning the first %d. Increase SHRIKE_MAX_SEGMENTS "
+                    "and rebuild to cover all.\n",
+                    SHRIKE_MAX_SEGMENTS, SHRIKE_MAX_SEGMENTS);
+                truncated = 1;
+            }
+            break;
+        }
 
         const uint8_t *sh = e->map + sect_off + (uint64_t)i * PE_SECT_HDR_SIZE;
 
