@@ -308,25 +308,53 @@ static int emit_one(strbuf_t *sb, const uint8_t *buf, size_t max)
             }
             return info.length;
         }
-        if ((op == 0x31 || op == 0x33) && (info.modrm >> 6) == 3) {
-            uint8_t reg = (info.modrm >> 3) & 7;
-            uint8_t rm  = info.modrm & 7;
-            const char *dst = (op == 0x31) ? pick_reg(w, op66, 0, info.rex, rm)
-                                           : pick_reg(w, op66, 0, info.rex, reg);
-            const char *src = (op == 0x31) ? pick_reg(w, op66, 0, info.rex, reg)
-                                           : pick_reg(w, op66, 0, info.rex, rm);
-            sb_printf(sb, "xor %s, %s", dst, src);
-            return info.length;
-        }
-        if ((op == 0x01 || op == 0x03) && (info.modrm >> 6) == 3) {
-            uint8_t reg = (info.modrm >> 3) & 7;
-            uint8_t rm  = info.modrm & 7;
-            const char *dst = (op == 0x01) ? pick_reg(w, op66, 0, info.rex, rm)
-                                           : pick_reg(w, op66, 0, info.rex, reg);
-            const char *src = (op == 0x01) ? pick_reg(w, op66, 0, info.rex, reg)
-                                           : pick_reg(w, op66, 0, info.rex, rm);
-            sb_printf(sb, "add %s, %s", dst, src);
-            return info.length;
+        /* v5.1 polish: generic ALU reg + r/m render for the
+         * eight primary-map opcode pairs that follow the same
+         * encoding (op = store-form, op+2 = load-form).
+         *   01/03  ADD
+         *   09/0B  OR
+         *   21/23  AND
+         *   29/2B  SUB
+         *   31/33  XOR
+         *   39/3B  CMP
+         *   11/13  ADC (not ROP-common but cheap)
+         *   19/1B  SBB  ditto
+         * For each, mod=3 renders "mnemo dst, src" reg-reg;
+         * mod<3 renders through render_rm_mem. */
+        {
+            static const struct { uint8_t store, load; const char *name; } alu[] = {
+                { 0x01, 0x03, "add" }, { 0x09, 0x0B, "or"  },
+                { 0x11, 0x13, "adc" }, { 0x19, 0x1B, "sbb" },
+                { 0x21, 0x23, "and" }, { 0x29, 0x2B, "sub" },
+                { 0x31, 0x33, "xor" }, { 0x39, 0x3B, "cmp" },
+            };
+            for (size_t ai = 0; ai < sizeof alu / sizeof alu[0]; ai++) {
+                if (op != alu[ai].store && op != alu[ai].load) continue;
+                int is_store = (op == alu[ai].store);
+                int rex_r = (info.rex >> 2) & 1;
+                int rex_b = (info.rex >> 0) & 1;
+                uint8_t reg = ((info.modrm >> 3) & 7) | (rex_r << 3);
+                uint8_t rm  = (info.modrm & 7)        | (rex_b << 3);
+                if ((info.modrm >> 6) == 3) {
+                    const char *d = is_store ? pick_reg(w, op66, 0, info.rex, rm)
+                                             : pick_reg(w, op66, 0, info.rex, reg);
+                    const char *s = is_store ? pick_reg(w, op66, 0, info.rex, reg)
+                                             : pick_reg(w, op66, 0, info.rex, rm);
+                    sb_printf(sb, "%s %s, %s", alu[ai].name, d, s);
+                    return info.length;
+                }
+                /* memory form */
+                const char *rreg = pick_reg(w, op66, 0, info.rex, reg);
+                if (is_store) {
+                    sb_printf(sb, "%s ", alu[ai].name);
+                    render_rm_mem(sb, &info, buf);
+                    sb_printf(sb, ", %s", rreg);
+                } else {
+                    sb_printf(sb, "%s %s, ", alu[ai].name, rreg);
+                    render_rm_mem(sb, &info, buf);
+                }
+                return info.length;
+            }
         }
         /* LEA r, [base+index*scale+disp] — full operand render now. */
         if (op == 0x8D && (info.modrm >> 6) != 3) {
