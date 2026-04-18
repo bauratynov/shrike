@@ -231,6 +231,10 @@ static size_t scan_riscv(const elf64_segment_t *seg,
 {
     size_t emitted = 0;
 
+    /* Mirror scan_x86's shape: a single loop over byte-offset
+     * starts. offset=0 covers the bare-terminator 1-insn gadget
+     * without a second emit block. Stride is 2 because RV64 aligns
+     * instructions on a 2-byte boundary (compressed extension). */
     for (size_t t = 0; t + 2 <= seg->size; t += 2) {
         size_t tl = riscv_insn_len(seg->bytes + t, seg->size - t);
         if (tl == 0) continue;
@@ -239,19 +243,18 @@ static size_t scan_riscv(const elf64_segment_t *seg,
         if (!rv_terminator_enabled(kind, cfg)) continue;
 
         size_t term_end = t + tl;
-        /* Max backscan expressed in bytes — stride is 2, max insn
-         * length is 4, so max_insn instructions consume up to
-         * 4 * max_insn bytes. */
+        /* Max backscan in bytes: max_insn instructions of up to 4
+         * bytes each. Clamp to how far we can actually walk. */
         size_t max_back = (size_t)cfg->max_insn * 4;
         if (t < max_back) max_back = t;
 
-        for (size_t offset = 2; offset <= max_back; offset += 2) {
+        for (size_t offset = 0; offset <= max_back; offset += 2) {
             size_t s = t - offset;
             size_t p = s;
             int    insns = 0;
             int    ok = 0;
 
-            while (p < t && insns < cfg->max_insn) {
+            while (p < t && insns < cfg->max_insn - 1) {
                 size_t il = riscv_insn_len(seg->bytes + p,
                                            seg->size - p);
                 if (il == 0) break;
@@ -259,8 +262,8 @@ static size_t scan_riscv(const elf64_segment_t *seg,
                 p += il;
                 insns++;
             }
-            if (p == t && insns < cfg->max_insn) {
-                /* Include the terminator as the final instruction. */
+            if (p == t) {
+                /* Terminator is always the final insn of the gadget. */
                 insns++;
                 ok = 1;
             }
@@ -277,17 +280,6 @@ static size_t scan_riscv(const elf64_segment_t *seg,
                 emitted++;
             }
         }
-
-        /* Also emit the bare terminator as a 1-insn gadget. */
-        gadget_t g;
-        g.vaddr      = seg->vaddr + t;
-        g.offset     = t;
-        g.length     = tl;
-        g.insn_count = 1;
-        g.bytes      = seg->bytes + t;
-        g.machine    = seg->machine;
-        cb(seg, &g, ctx);
-        emitted++;
     }
     return emitted;
 }
