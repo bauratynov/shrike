@@ -1,4 +1,10 @@
-# Chapter 5 — CET-aware chain synthesis
+# Chapter 5 — Mitigation-aware chain synthesis
+
+> v5.4.0 extended the CET-IBT story to cover SHSTK (shadow
+> stack) and arm64e PAC in the same resolver pass. The
+> chapter focuses on IBT for continuity with earlier docs,
+> but the same annotations surface for the other two
+> mitigations. See the "Beyond IBT" section at the end.
 
 New in v5.3.0. Intel CET (and its cousins ARM BTI, RISC-V
 Zicfiss) aren't just detection — shrike now PREFERS gadgets
@@ -124,12 +130,48 @@ shrike --recipe '...' libc-noproxy.so.6 bash
   `endbr_start` bit infrastructure) for when `lpad`
   instruction becomes deployed.
 
+## Beyond IBT — SHSTK and PAC (v5.4.0)
+
+The same resolver pass now scores every candidate against
+three mitigations:
+
+- **CET IBT**: as above. `endbr_start` gets preferred when
+  image's .note.gnu.property declares IBT.
+- **CET SHSTK**: prefer gadgets whose terminator doesn't
+  pop from the shadow stack. The `shstk_blocked` field (v0.19)
+  inverted becomes `shstk_safe`; resolver selects on it.
+- **arm64e PAC**: on Mach-O binaries with cpusubtype
+  `CPU_SUBTYPE_ARM64E`, gadgets whose body contains an
+  AUT* instruction are `pac_hostile` — they'll fault
+  without a sign oracle. Resolver avoids them.
+
+Score weights:
+  `IBT (8)  >  SHSTK (4)  >  PAC (2)`
+
+A gadget satisfying all three scores 14; a gadget failing
+IBT but passing SHSTK + PAC scores 6; the picker takes the
+highest. Tiebreak goes to first observation.
+
+Output annotations distinguish which mitigation was satisfied
+or failed. Chain-level summary lists every active mitigation:
+
+```
+# mitigations: image requires IBT SHSTK — chain survives.
+```
+
+or
+
+```
+# mitigations: image requires IBT PAC — chain NOT survivable.
+```
+
 ## What this doesn't protect against
 
-- **SHSTK.** Shadow-stack violations are detected by the CPU
-  via a separate mechanism. shrike reports `shstk_blocked`
-  per gadget (since v0.19.0) but doesn't yet integrate that
-  into the resolver's pick — tracked for v5.4 or later.
+- **SHSTK bypass techniques.** SHSTK can be defeated by
+  abusing control-flow constructs the CPU doesn't check
+  (e.g. signal handlers, sigreturn on Linux). shrike's
+  `shstk_safe` flag is about the gadget itself not
+  triggering SHSTK; it doesn't model bypass primitives.
 - **Bypass techniques.** There's a growing literature of
   ways to turn CET-enabled binaries into ROP-exploitable
   targets anyway: retbleed (transient-execution ROP),

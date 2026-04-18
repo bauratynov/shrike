@@ -3,6 +3,56 @@
 All notable changes to `shrike` are listed here. Project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.4.0] — 2026-04-18
+
+**Full mitigation-aware chain synthesis.** v5.3 introduced
+CET-IBT preference; v5.4 extends the same infrastructure to
+cover CET-SHSTK and arm64e PAC in one scoring pass.
+
+### Mitigations surfaced
+- **CET IBT**: prefer `endbr_start` gadgets (carried over from
+  v5.3). Weight 8.
+- **CET SHSTK**: prefer `shstk_safe` gadgets — those whose
+  terminator doesn't pop the shadow-stack. Weight 4.
+- **arm64e PAC**: prefer gadgets without AUT* instructions
+  that would fault without a valid sign oracle. Weight 2.
+- Ties go to first observation (stable output).
+
+### Implementation
+- `arm64.c::arm64_pac_kind()` — classifier for AUT*/PAC*
+  data-processing-1-source instructions.
+- `gadget_effect_t` grows `has_pac_auth` + `has_pac_sign`.
+  `compute_a64` sets them when the respective ops appear
+  in the gadget body; RETAA/RETAB implicitly set
+  has_pac_auth since they auth x30.
+- `regidx_t` grows parallel `shstk_safe[][]` and
+  `pac_hostile[][]` arrays (plus syscall variants and the
+  multi-pop flags).
+- `regidx_pick_index` / `regidx_pick_syscall_index` use a
+  scoring function summing weights per active mitigation.
+- `main.c` populates `ri.pac_required` when any input
+  binary has `macho_arm64e` set.
+- `recipe.c` emits per-line tags like `[mitigations:
+  survives]` or `[shstk: FAIL — blocked]` /
+  `[pac: FAIL — AUT* needs sign oracle]`. Chain-level
+  summary lists every active mitigation.
+
+### Tests
+- Scoring tested via hand-populated regidx (same approach as
+  v5.3.0's test_cet_aware_pick; synthesizing real arm64e
+  gadgets without a real compiler is impractical).
+
+### Docs
+- `docs/book/05-cet-awareness.md` renamed-in-content to
+  "Mitigation-aware chain synthesis" with a new section
+  covering SHSTK and PAC.
+
+### ABI
+- soname stays `libshrike.so.5`. elf64_t unchanged. regidx_t
+  grows new fields (shstk_safe[][], pac_hostile[][] arrays,
+  pac_required byte + syscall equivalents). Offsets of
+  existing fields unchanged.
+
 ## [5.3.0] — 2026-04-18
 
 **CET-aware chain synthesis.** First open-source ROP scanner
