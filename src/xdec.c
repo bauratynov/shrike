@@ -177,37 +177,50 @@ int xdec_full(const uint8_t *buf, size_t max, xdec_info_t *info)
      *     C5  [R'.vvvv.L.pp]  opcode  modrm ...
      * C4 (3-byte VEX):
      *     C4  [R'.X'.B'.mmmmm]  [W.vvvv.L.pp]  opcode  modrm ... */
+    /* The VEX pp field (byte1[1:0] on C5, byte2[1:0] on C4)
+     * supplies the instruction's mandatory prefix:
+     *   00 → none, 01 → op66, 10 → F3, 11 → F2.
+     * classify_0f only distinguishes op66 from non-op66, so
+     * that's all we need to map pp into. Any legacy op66
+     * prefix we ate earlier is semantically discarded by VEX. */
     if (buf[p] == 0xC5 && p + 1 < max) {
-        p++;                     /* consume C5 */
-        p++;                     /* consume byte1 (R'.vvvv.L.pp) */
+        uint8_t b1 = buf[p + 1];
+        uint8_t pp = b1 & 0x3;
+        p += 2;                  /* consume C5 + byte1 */
         if (p >= max) return -1;
         uint8_t op = buf[p++];
         info->map    = 2;        /* C5 implies 0F map */
         info->opcode = op;
         int has_modrm = 1, imm_bytes = 0;
-        /* A few VEX opcodes carry an imm8 (e.g. VPSHUFD, VPALIGNR,
-         * VPCMP*). Assume imm8 only if the classify_0f says so;
-         * the generic "VEX has no imm" assumption is right for
-         * the majority. */
-        classify_0f(op, info->op66, info->rex_w,
+        int vex_op66 = (pp == 0x1);
+        classify_0f(op, vex_op66, info->rex_w,
                     &has_modrm, &imm_bytes);
         info->has_modrm = (uint8_t)has_modrm;
         info->imm_bytes = (uint8_t)imm_bytes;
+        /* VEX mandatory prefix overrides legacy op66 for the
+         * purposes of imm-size classification. Reflect that in
+         * info->op66 so callers (format.c renderer, xdec_length
+         * consumers) see the effective prefix state, not stale
+         * pre-VEX legacy state. */
+        info->op66 = (uint8_t)vex_op66;
         goto do_modrm;
     }
     if (buf[p] == 0xC4 && p + 2 < max) {
-        p++;                     /* consume C4 */
-        uint8_t b1 = buf[p++];
-        uint8_t b2 = buf[p++];
+        uint8_t b1 = buf[p + 1];
+        uint8_t b2 = buf[p + 2];
         uint8_t mmmm = b1 & 0x1f;
+        uint8_t pp   = b2 & 0x3;
         info->rex_w = (b2 >> 7) & 1u;   /* W bit lives in byte2 */
+        p += 3;                  /* consume C4 + byte1 + byte2 */
         if (p >= max) return -1;
         uint8_t op = buf[p++];
         int has_modrm = 1, imm_bytes = 0;
+        int vex_op66 = (pp == 0x1);
+        info->op66 = (uint8_t)vex_op66;
         if (mmmm == 0x01) {                /* 0F map */
             info->map = 2;
             info->opcode = op;
-            classify_0f(op, info->op66, info->rex_w,
+            classify_0f(op, vex_op66, info->rex_w,
                         &has_modrm, &imm_bytes);
         } else if (mmmm == 0x02) {         /* 0F 38 map */
             info->map    = 3;
