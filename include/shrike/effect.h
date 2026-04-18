@@ -1,6 +1,12 @@
 /*
  * effect.h — typed per-gadget effect record.
  *
+ * Stability: @stable_since 5.1. The struct layout and the three
+ * public functions (gadget_effect_compute, gadget_effect_compose,
+ * gadget_is_dispatcher, gadget_is_dop_write) are covered by the
+ * 5.x freeze. New fields may be appended to gadget_effect_t at
+ * a minor bump; existing fields stay.
+ *
  * The register-control index (regidx.c) answers "which gadgets
  * can I use to set register R?" by looking at the final bytes
  * and classifying. That's fine for the single-register case, but

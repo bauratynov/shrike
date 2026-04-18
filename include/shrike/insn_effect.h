@@ -1,6 +1,11 @@
 /*
  * insn_effect.h — per-instruction typed effect record.
  *
+ * Stability: @stable_since 5.1. insn_effect_t and
+ * insn_effect_decode() are part of the 5.x public contract;
+ * per-arch decoder reach can grow in minor bumps. Existing
+ * flags + struct fields stay stable.
+ *
  * `gadget_effect_t` (v1.5.0) summarises the whole gadget. For
  * symbolic execution, chain-correctness proofs, and any analysis
  * that needs "what does *this one instruction* read / write",

@@ -1,6 +1,13 @@
 /*
  * smt.h — SMT-LIB2 proof emitter for chain correctness.
  *
+ * Stability: @stable_since 5.1. The single entry point
+ * shrike_smt_emit(recipe, index, machine, FILE *) is frozen
+ * for the 5.x line. The SMT2 output shape itself (QF_BV
+ * register-state semantics) may gain new assertions in patch
+ * bumps — e.g. memory modelling in a future 5.x — but existing
+ * assertions won't be removed.
+ *
  * Given a recipe and its resolved gadget chain (as found by the
  * v1.5.x synthesizer), emit an SMT2 file that encodes:
  *
