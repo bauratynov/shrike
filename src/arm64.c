@@ -279,6 +279,39 @@ render_b_bl(char *buf, size_t buflen, uint32_t insn)
                     (unsigned)(off < 0 ? -off : off));
 }
 
+/* LDR / STR (immediate, unsigned offset, 64-bit):
+ *     1111 1001 L imm12 Rn Rt
+ *   L=0 STR, L=1 LDR. imm12 is unsigned, shifted by 3 for
+ *   the 64-bit variant (so effective displacement is imm12*8).
+ */
+static int
+render_ldst_imm(char *buf, size_t buflen, uint32_t insn)
+{
+    /* Mask: opc bits + size bits. 32-bit (size=10) and 64-bit
+     * (size=11) LDR/STR unsigned-offset share bits 28:23 = 111001.
+     * We only render the 64-bit form for now; 32-bit falls through. */
+    if ((insn & 0xFFC00000u) != 0xF9400000u &&
+        (insn & 0xFFC00000u) != 0xF9000000u) {
+        return -1;
+    }
+    int is_load = (insn & 0x00400000u) != 0;
+    uint32_t imm12 = (insn >> 10) & 0xFFF;
+    uint32_t rn    = (insn >>  5) & 0x1F;
+    uint32_t rt    =  insn        & 0x1F;
+    uint32_t disp  = imm12 * 8;
+
+    const char *rt_name = reg_name(rt, 1, 0);
+    const char *rn_name = reg_name(rn, 1, 1);
+    const char *mnemo = is_load ? "ldr" : "str";
+
+    if (disp == 0) {
+        return snprintf(buf, buflen, "%s %s, [%s]",
+                        mnemo, rt_name, rn_name);
+    }
+    return snprintf(buf, buflen, "%s %s, [%s, #%u]",
+                    mnemo, rt_name, rn_name, (unsigned)disp);
+}
+
 int arm64_render_insn(char *buf, size_t buflen, uint32_t insn)
 {
     if (buflen == 0) return 0;
@@ -308,6 +341,8 @@ int arm64_render_insn(char *buf, size_t buflen, uint32_t insn)
     n = render_mov_wide(buf, buflen, insn);
     if (n >= 0) return n;
     n = render_b_bl(buf, buflen, insn);
+    if (n >= 0) return n;
+    n = render_ldst_imm(buf, buflen, insn);
     if (n >= 0) return n;
 
     /* Fallback */
