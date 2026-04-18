@@ -26,6 +26,9 @@ extern "C" {
 #define EM_X86_64    62
 #define EM_AARCH64   183
 #define EM_RISCV     243
+#define EM_PPC64     21
+#define EM_MIPS      8
+#define EM_MIPS_RS3_LE 10
 
 #define ET_EXEC 2
 #define ET_DYN  3

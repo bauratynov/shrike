@@ -3,6 +3,53 @@
 All notable changes to `shrike` are listed here. Project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.0.0] — 2026-04-18
+
+**Formal verification depth + PowerPC 64 + MIPS scanners.**
+Closes the V3_ROADMAP Stage VIII architecture coverage and
+Stage XII SMT extensions in one release.
+
+### New architectures
+
+**PPC64 (ppc64le)** — `include/shrike/ppc64.h` + `src/ppc64.c`:
+- Fixed 4-byte instructions (same scanning pattern as
+  aarch64).
+- Terminators: `blr` (0x4E800020), `bctr` (0x4E800420),
+  `sc` (0x44000002).
+- Little-endian only for 5.0; ppc64be support tracked for
+  a 5.x patch bump.
+
+**MIPS32/MIPS64** — `include/shrike/mips.h` + `src/mips.c`:
+- Fixed 4-byte; byte-order auto-selected via
+  EM_MIPS (BE) vs EM_MIPS_RS3_LE (LE).
+- Terminators: `jr rs`, `jalr rs`, `syscall`, `eret`.
+- **Delay slot ignored** for 5.0 — gadgets end at the
+  branch itself. Chain consumers pad one instruction for
+  the delay slot on their own. Delay-slot-aware scanning
+  is 5.x work.
+
+Both feed into `scan_segment` dispatch via
+`scan_ppc64` / `scan_mips` helpers modelled on
+`scan_aarch64`. `format.c` emits mnemonics via the arch's
+own `_render_insn` function; unknown opcodes fall back to
+`.long 0xXXXXXXXX` / `.word 0xXXXXXXXX`.
+
+### SMT depth — stack pointer modelling
+`shrike_smt_emit` now declares `sp_k` bitvector for each
+step and asserts `sp_k = sp_{k-1} + stack_bump` where
+stack_bump is 16 for SET_REG, 8 for RET, 0 for SYSCALL.
+Catches stack-pivot mistakes the register-only emission
+would miss. Real `stack_consumed` from the regidx lands
+as 5.x.
+
+### ABI
+- soname bumps `libshrike.so.4 → libshrike.so.5`.
+- CLI / JSON / SARIF / exit codes unchanged.
+- `<shrike/ppc64.h>` + `<shrike/mips.h>` shipped as
+  public headers, but **not** under the 3.x frozen
+  contract yet — they stabilise in 5.1 alongside the
+  delay-slot work.
+
 ## [4.0.0] — 2026-04-18
 
 **Dynamic discovery + IDE ecosystem.** Closes the V3_ROADMAP

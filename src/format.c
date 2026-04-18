@@ -27,6 +27,8 @@
 #include <shrike/xdec.h>
 #include <shrike/arm64.h>
 #include <shrike/riscv.h>
+#include <shrike/ppc64.h>
+#include <shrike/mips.h>
 #include <shrike/elf64.h>
 
 #include <inttypes.h>
@@ -491,7 +493,23 @@ static void render_insns(strbuf_t *sb, const gadget_t *g)
             n = emit_one_a64(sb, g->bytes + p, g->length - p);
         else if (g->machine == EM_RISCV)
             n = emit_one_rv(sb, g->bytes + p, g->length - p);
-        else
+        else if (g->machine == EM_PPC64) {
+            if (g->length - p < 4) { sb_printf(sb, "?"); return; }
+            char local[64];
+            uint32_t insn = ppc64_read_insn(g->bytes + p);
+            ppc64_render_insn(local, sizeof local, insn);
+            sb_printf(sb, "%s", local);
+            n = 4;
+        } else if (g->machine == EM_MIPS ||
+                   g->machine == EM_MIPS_RS3_LE) {
+            if (g->length - p < 4) { sb_printf(sb, "?"); return; }
+            char local[64];
+            int le = (g->machine == EM_MIPS_RS3_LE);
+            uint32_t insn = mips_read_insn(g->bytes + p, le);
+            mips_render_insn(local, sizeof local, insn);
+            sb_printf(sb, "%s", local);
+            n = 4;
+        } else
             n = emit_one(sb, g->bytes + p, g->length - p);
         if (n <= 0) { sb_printf(sb, "?"); return; }
         p += (size_t)n;

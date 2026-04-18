@@ -18,6 +18,8 @@
 #include <shrike/xdec.h>
 #include <shrike/arm64.h>
 #include <shrike/riscv.h>
+#include <shrike/ppc64.h>
+#include <shrike/mips.h>
 #include <shrike/elf64.h>
 
 #include <string.h>
@@ -291,6 +293,96 @@ static size_t scan_riscv(const elf64_segment_t *seg,
 }
 
 /* ============================================================
+ * PowerPC 64 scanner (v5.0.0)
+ * ============================================================
+ * Fixed 4-byte instructions like aarch64. Same walk, different
+ * terminator table. ppc64le only for v5.0.
+ */
+
+static size_t scan_ppc64(const elf64_segment_t *seg,
+                         const scan_config_t   *cfg,
+                         gadget_cb_t            cb,
+                         void                  *ctx)
+{
+    size_t start = (4 - (seg->vaddr & 3)) & 3;
+    size_t emitted = 0;
+
+    for (size_t t = start; t + 4 <= seg->size; t += 4) {
+        uint32_t insn = ppc64_read_insn(seg->bytes + t);
+        if (!ppc64_is_terminator(insn)) continue;
+        if (ppc64_is_syscall(insn) && !cfg->include_syscall) continue;
+
+        size_t term_end = t + 4;
+        int max_insn  = cfg->max_insn;
+        int max_words = (int)(t / 4);
+        if (max_insn > max_words + 1) max_insn = max_words + 1;
+
+        for (int k = 1; k <= max_insn; k++) {
+            size_t s = t - (size_t)(k - 1) * 4;
+            gadget_t g;
+            g.vaddr      = seg->vaddr + s;
+            g.offset     = s;
+            g.length     = term_end - s;
+            g.insn_count = k;
+            g.bytes      = seg->bytes + s;
+            g.machine    = seg->machine;
+            cb(seg, &g, ctx);
+            emitted++;
+        }
+    }
+    return emitted;
+}
+
+/* ============================================================
+ * MIPS32 / MIPS64 scanner (v5.0.0)
+ * ============================================================
+ * Fixed 4-byte instructions. Byte-order taken from machine code:
+ * EM_MIPS_RS3_LE implies little-endian; EM_MIPS is big-endian
+ * (the historical default; modern Linux MIPS64 is LE via
+ * EM_MIPS_RS3_LE or e_ident[5] but we stick to the machine field
+ * for clarity).
+ *
+ * Delay slot: ignored for v5.0. Gadgets end at the branch itself.
+ * Chain consumers must pad one instruction for the delay slot on
+ * their own. Full delay-slot-aware scanning is 5.x work.
+ */
+
+static size_t scan_mips(const elf64_segment_t *seg,
+                        const scan_config_t   *cfg,
+                        gadget_cb_t            cb,
+                        void                  *ctx)
+{
+    int le = (seg->machine == EM_MIPS_RS3_LE);
+    size_t start = (4 - (seg->vaddr & 3)) & 3;
+    size_t emitted = 0;
+
+    for (size_t t = start; t + 4 <= seg->size; t += 4) {
+        uint32_t insn = mips_read_insn(seg->bytes + t, le);
+        if (!mips_is_terminator(insn)) continue;
+        if (mips_is_syscall(insn) && !cfg->include_syscall) continue;
+
+        size_t term_end = t + 4;
+        int max_insn  = cfg->max_insn;
+        int max_words = (int)(t / 4);
+        if (max_insn > max_words + 1) max_insn = max_words + 1;
+
+        for (int k = 1; k <= max_insn; k++) {
+            size_t s = t - (size_t)(k - 1) * 4;
+            gadget_t g;
+            g.vaddr      = seg->vaddr + s;
+            g.offset     = s;
+            g.length     = term_end - s;
+            g.insn_count = k;
+            g.bytes      = seg->bytes + s;
+            g.machine    = seg->machine;
+            cb(seg, &g, ctx);
+            emitted++;
+        }
+    }
+    return emitted;
+}
+
+/* ============================================================
  * Dispatch
  * ============================================================ */
 
@@ -309,6 +401,12 @@ size_t scan_segment(const elf64_segment_t *seg,
     }
     if (seg->machine == EM_RISCV) {
         return scan_riscv(seg, cfg, cb, ctx);
+    }
+    if (seg->machine == EM_PPC64) {
+        return scan_ppc64(seg, cfg, cb, ctx);
+    }
+    if (seg->machine == EM_MIPS || seg->machine == EM_MIPS_RS3_LE) {
+        return scan_mips(seg, cfg, cb, ctx);
     }
     /* Default / EM_X86_64 */
     return scan_x86(seg, cfg, cb, ctx);

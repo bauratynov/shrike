@@ -51,10 +51,16 @@ shrike_smt_emit(const recipe_t *recipe, const regidx_t *index,
         (machine == EM_RISCV)   ? "riscv64" : "x86_64",
         recipe->n, nregs);
 
-    /* step 0 — initial symbolic state. */
+    /* step 0 — initial symbolic state: registers + stack pointer.
+     * sp_0 is a fresh symbolic constant; each gadget bumps it by
+     * its stack_consumed (16 for pop-ret, 24 for pop-pop-ret,
+     * etc.). The goal at the end asserts sp_final = sp_0 + total
+     * expected bytes, which catches stack-pivot mistakes that
+     * would otherwise go unnoticed until the chain fired. */
     for (int r = 0; r < nregs; r++) {
         fprintf(out, "(declare-const r%d_0 (_ BitVec 64))\n", r);
     }
+    fprintf(out, "(declare-const sp_0 (_ BitVec 64))\n");
     fputc('\n', out);
 
     /* For each recipe statement, generate a transition. */
@@ -66,6 +72,18 @@ shrike_smt_emit(const recipe_t *recipe, const regidx_t *index,
         for (int r = 0; r < nregs; r++) {
             fprintf(out, "(declare-const r%d_%d (_ BitVec 64))\n", r, k);
         }
+        fprintf(out, "(declare-const sp_%d (_ BitVec 64))\n", k);
+
+        /* Default stack bump per set_reg step: 16 bytes (one
+         * addr slot + one value slot). Syscalls don't move SP.
+         * Real stack_consumed would come from the regidx —
+         * future 5.x patch bump. */
+        uint64_t sp_bump =
+            (st->op == RSTMT_SET_REG) ? 16 :
+            (st->op == RSTMT_RET)     ? 8  : 0;
+        fprintf(out,
+            "(assert (= sp_%d (bvadd sp_%d (_ bv%" PRIu64 " 64))))\n",
+            k, k - 1, sp_bump);
 
         if (st->op == RSTMT_SET_REG) {
             int target = st->reg;

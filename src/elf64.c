@@ -49,12 +49,15 @@ static int parse(elf64_t *e)
     if (eh->e_ident[4] != ELFCLASS64 || eh->e_ident[5] != ELFDATA2LSB) {
         errno = ENOTSUP; return -1;
     }
-    /* v1.4.1: RISC-V is a first-class arch now; accept alongside
-     * x86-64 and aarch64. Older code paths still check for the
-     * -4 sentinel if they want to diff behaviour. */
+    /* v1.4.1 + v5.0.0: accept x86-64, aarch64, RISC-V, PPC64,
+     * MIPS. Byte-order for MIPS is taken from e_ident[5] so both
+     * big-endian and little-endian flavours work. */
     if (eh->e_machine != EM_X86_64 &&
         eh->e_machine != EM_AARCH64 &&
-        eh->e_machine != EM_RISCV) {
+        eh->e_machine != EM_RISCV &&
+        eh->e_machine != EM_PPC64 &&
+        eh->e_machine != EM_MIPS &&
+        eh->e_machine != EM_MIPS_RS3_LE) {
         errno = ENOTSUP; return -1;
     }
     if (eh->e_phentsize != sizeof(Elf64_Phdr)) { errno = EINVAL; return -1; }
