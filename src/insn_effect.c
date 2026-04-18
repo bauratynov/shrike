@@ -132,14 +132,81 @@ decode_a64(const uint8_t *b, size_t max, insn_effect_t *o)
             o->terminator = GADGET_TERM_SYSCALL;
         } else if ((w & 0xFFFFFC1Fu) == 0xD61F0000u) {
             o->terminator = GADGET_TERM_JMP_REG;
+            /* BR Xn: reads Rn. */
+            o->reads_mask = 1u << ((w >> 5) & 0x1f);
         } else if ((w & 0xFFFFFC1Fu) == 0xD63F0000u) {
             o->terminator = GADGET_TERM_CALL_REG;
+            o->reads_mask = 1u << ((w >> 5) & 0x1f);
         } else {
             o->terminator = GADGET_TERM_RET;
+            /* RET Xn (default Xn=x30): reads Rn. */
+            o->reads_mask = 1u << ((w >> 5) & 0x1f);
         }
         o->length = 4;
         return 4;
     }
+
+    /* v2.1.2 follow-up: recognise the load/move shapes that
+     * appear in real dispatcher gadgets, so gadget_is_dispatcher
+     * actually fires on aarch64 binaries.
+     *
+     *   LDR Xt, [Xn, #imm]   — unsigned-offset load from memory
+     *     1111 1001 01 imm12 Rn Rt            (64-bit variant)
+     *   LDR Xt, [Xn], #imm   — post-index
+     *     1111 1000 010 imm9 01 Rn Rt
+     *   MOV Xd, Xm (ORR Xd, XZR, Xm)
+     *     1010 1010 000 Rm 000000 11111 Rd
+     */
+
+    /* LDR (unsigned offset, 64-bit): writes Rt, reads Rn. */
+    if ((w & 0xFFC00000u) == 0xF9400000u) {
+        uint32_t rt = w & 0x1f;
+        uint32_t rn = (w >> 5) & 0x1f;
+        o->writes_mask = 1u << rt;
+        o->reads_mask  = 1u << rn;
+        o->flags = INSN_EFFECT_MEM_READ | INSN_EFFECT_KNOWN;
+        o->length = 4;
+        return 4;
+    }
+
+    /* LDR (post-index, 64-bit). */
+    if ((w & 0xFFE00C00u) == 0xF8400400u) {
+        uint32_t rt = w & 0x1f;
+        uint32_t rn = (w >> 5) & 0x1f;
+        o->writes_mask = 1u << rt;
+        if (rn != rt) o->reads_mask = 1u << rn;
+        o->flags = INSN_EFFECT_MEM_READ | INSN_EFFECT_KNOWN;
+        o->length = 4;
+        return 4;
+    }
+
+    /* MOV Xd, Xm (ORR form). Mask + pattern from arm64.c. */
+    if ((w & 0xFFE0FFE0u) == 0xAA0003E0u) {
+        uint32_t rd = w & 0x1f;
+        uint32_t rm = (w >> 16) & 0x1f;
+        o->writes_mask = 1u << rd;
+        o->reads_mask  = 1u << rm;
+        o->flags = INSN_EFFECT_KNOWN;
+        o->length = 4;
+        return 4;
+    }
+
+    /* LDP Xt1, Xt2, [Xn{, #imm}]  — offset form (no post-index).
+     * Useful in dispatcher prologues that restore callee-saved
+     * regs + LR then BR. Full 64-bit offset form:
+     *   1010 1001 01 imm7 Rt2 Rn Rt1
+     */
+    if ((w & 0xFFC00000u) == 0xA9400000u) {
+        uint32_t rt1 = w & 0x1f;
+        uint32_t rt2 = (w >> 10) & 0x1f;
+        uint32_t rn  = (w >> 5) & 0x1f;
+        o->writes_mask = (1u << rt1) | (1u << rt2);
+        o->reads_mask  = 1u << rn;
+        o->flags = INSN_EFFECT_MEM_READ | INSN_EFFECT_KNOWN;
+        o->length = 4;
+        return 4;
+    }
+
     return -1;
 }
 

@@ -189,6 +189,38 @@ main(void)
         CHECK(gadget_is_dispatcher(&g, GADGET_TERM_JMP_REG) == 0);
     }
 
+    /* v2.1.2 aarch64: dispatcher shape.
+     *   ldr x16, [x17]     — f9400230  (load target from memory)
+     *   br  x16            — d61f0200  (jump to it)
+     *
+     * Little-endian 4-byte words:
+     *   f9 40 02 30 30 02 40 f9  → 30 02 40 f9 00 02 1f d6
+     * Wait: let me just build the uint32 and write LE. */
+    {
+        /* insn1: ldr x16, [x17]  bits: 11111001010000000000001000110000
+         *   1111 1001 01 imm12=0 Rn=10001 Rt=10000
+         *   = 0xF9400230 */
+        uint32_t ldr = 0xF9400230u;
+        /* insn2: br x16
+         *   1101 0110 0001 1111 0000 00 Rn=10000 00000
+         *   = 0xD61F0200 */
+        uint32_t br  = 0xD61F0200u;
+        uint8_t a64_disp[8];
+        a64_disp[0] = (uint8_t)ldr;
+        a64_disp[1] = (uint8_t)(ldr >> 8);
+        a64_disp[2] = (uint8_t)(ldr >> 16);
+        a64_disp[3] = (uint8_t)(ldr >> 24);
+        a64_disp[4] = (uint8_t)br;
+        a64_disp[5] = (uint8_t)(br >> 8);
+        a64_disp[6] = (uint8_t)(br >> 16);
+        a64_disp[7] = (uint8_t)(br >> 24);
+        gadget_t g = {0};
+        g.bytes = a64_disp; g.length = sizeof a64_disp;
+        g.machine = EM_AARCH64;
+        CHECK(gadget_is_dispatcher(&g, GADGET_TERM_JMP_REG) == 1);
+        CHECK(gadget_is_dispatcher(&g, GADGET_TERM_CALL_REG) == 0);
+    }
+
     /* v2.1.4: DOP write primitive.
      *   mov rax, [rdi]   48 8B 07      — load target addr from memory
      *   mov [rax], rsi   48 89 30      — store attacker data via it
