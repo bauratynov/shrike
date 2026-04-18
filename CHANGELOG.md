@@ -3,6 +3,37 @@
 All notable changes to `shrike` are listed here. Project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] — 2026-04-18
+
+**PE Debug Directory parsing.** Stage VIII opens. `pe.c` now
+walks `DataDirectory[6]` to extract:
+
+- `IMAGE_DEBUG_TYPE_EX_DLLCHARACTERISTICS` (type 20) — the
+  real `CET_COMPAT` flag, which is NOT part of the
+  `OptionalHeader.DllCharacteristics` bitfield despite how
+  many tools claim otherwise.
+- `IMAGE_DEBUG_TYPE_CODEVIEW` (type 2) with the `RSDS`
+  signature — the companion `.pdb` path string. Stored in
+  `elf64_t.pe_pdb_path` for the symbol-enrichment sprint
+  that lands in Stage VIII.v2 (V3 roadmap v2.2.0 proper).
+
+### Changes
+- `<shrike/pe.h>` exports
+  `IMAGE_DLLCHARACTERISTICS_EX_CET_COMPAT`,
+  `IMAGE_DEBUG_TYPE_CODEVIEW`,
+  `IMAGE_DEBUG_TYPE_EX_DLLCHARACTERISTICS`.
+- `elf64_t` grows `uint32_t pe_dll_chars_ex` +
+  `char pe_pdb_path[260]`.
+- PE32+ only for this bump — PE32 (32-bit i386) is rare in
+  ROP work and has a different DataDirectory offset. Landing
+  PE32 alongside a proper i386 decoder is tracked for V4.
+- `shrike --cet-posture foo.dll` now reports
+  `CET_COMPAT=on|off` and, when a `.pdb` path is embedded,
+  prints it in the same line.
+
+Version bump 2.1.4 → 2.2.0 (minor — new output field,
+additive).
+
 ## [2.1.4] — 2026-04-18
 
 **COP dispatcher (2.1.3) + DOP write primitive detector (2.1.4).**

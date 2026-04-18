@@ -101,6 +101,11 @@ typedef struct {
      * ASLR / HIGH_ENTROPY_VA without a second parse pass. */
     int               format;
     uint16_t          pe_dll_chars;
+
+    /* v2.2.0: extended PE characteristics parsed out of the
+     * Debug Directory. Zero for non-PE inputs. */
+    uint32_t          pe_dll_chars_ex;
+    char              pe_pdb_path[260];
 } elf64_t;
 
 /* mmap + parse + fill the segs[] array with executable PT_LOAD entries.

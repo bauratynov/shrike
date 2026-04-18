@@ -198,6 +198,55 @@ static int parse(elf64_t *e)
     }
 
     if (e->nseg == 0) { errno = ENOEXEC; return -1; }
+
+    /* v2.2.0: Debug Directory (DataDirectory[6]). Only parsed on
+     * PE32+ for simplicity — PE32 ImageBase+DataDir layout differs.
+     * We extract two entries:
+     *   type 20 — IMAGE_DEBUG_TYPE_EX_DLLCHARACTERISTICS
+     *             → CET_COMPAT etc.
+     *   type  2 — IMAGE_DEBUG_TYPE_CODEVIEW, RSDS signature
+     *             → PDB path for a future symbol-enrichment sprint */
+    if (opt_magic == PE_OPT_MAGIC_PE32P && opt_sz >= 112 + 7 * 8) {
+        uint32_t debug_rva  = rd_u32(opt + 112 + 6 * 8);
+        uint32_t debug_size = rd_u32(opt + 112 + 6 * 8 + 4);
+        if (debug_rva && debug_size) {
+            for (uint16_t i = 0; i < nsect; i++) {
+                const uint8_t *sh =
+                    e->map + sect_off + (uint64_t)i * PE_SECT_HDR_SIZE;
+                uint32_t vsz  = rd_u32(sh + PE_SH_VSIZE_OFF);
+                uint32_t vrva = rd_u32(sh + PE_SH_VADDR_OFF);
+                uint32_t rptr = rd_u32(sh + PE_SH_RAWPTR_OFF);
+                if (debug_rva < vrva || debug_rva >= vrva + vsz) continue;
+                uint64_t file_off = (uint64_t)rptr + (debug_rva - vrva);
+                if (!in_bounds(e, file_off, debug_size)) break;
+
+                uint32_t entries = debug_size / 28;
+                for (uint32_t j = 0; j < entries; j++) {
+                    const uint8_t *de = e->map + file_off + (uint64_t)j * 28;
+                    uint32_t type  = rd_u32(de + 12);
+                    uint32_t sz    = rd_u32(de + 16);
+                    uint32_t dfoff = rd_u32(de + 24);
+
+                    if (type == IMAGE_DEBUG_TYPE_EX_DLLCHARACTERISTICS &&
+                        sz >= 4 && in_bounds(e, dfoff, sz)) {
+                        e->pe_dll_chars_ex = rd_u32(e->map + dfoff);
+                    }
+                    if (type == IMAGE_DEBUG_TYPE_CODEVIEW &&
+                        sz >= 24 && in_bounds(e, dfoff, sz)) {
+                        if (memcmp(e->map + dfoff, "RSDS", 4) == 0) {
+                            const uint8_t *path = e->map + dfoff + 24;
+                            size_t maxlen = sz - 24;
+                            if (maxlen >= sizeof e->pe_pdb_path)
+                                maxlen = sizeof e->pe_pdb_path - 1;
+                            memcpy(e->pe_pdb_path, path, maxlen);
+                            e->pe_pdb_path[maxlen] = '\0';
+                        }
+                    }
+                }
+                break;
+            }
+        }
+    }
     return 0;
 }
 

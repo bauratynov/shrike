@@ -47,6 +47,13 @@ extern "C" {
 #define IMAGE_DLLCHARACTERISTICS_NO_SEH             0x0400u
 #define IMAGE_DLLCHARACTERISTICS_GUARD_CF           0x4000u
 
+/* DllCharacteristicsEx — lives in a Debug Directory entry of
+ * type 20 (IMAGE_DEBUG_TYPE_EX_DLLCHARACTERISTICS). Extracted
+ * into elf64_t.pe_dll_chars_ex at load time. */
+#define IMAGE_DLLCHARACTERISTICS_EX_CET_COMPAT      0x0001u
+#define IMAGE_DEBUG_TYPE_CODEVIEW                   2
+#define IMAGE_DEBUG_TYPE_EX_DLLCHARACTERISTICS      20
+
 /* mmap + parse + fill e->segs[] with every executable section.
  * Returns 0 on success, -1 + errno on failure. On success the
  * caller must elf64_close(e) as with the ELF path. */
