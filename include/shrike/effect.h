@@ -78,19 +78,25 @@ typedef struct {
  * anyway — callers don't need to special-case architectures. */
 int gadget_effect_compute(const gadget_t *g, gadget_effect_t *out);
 
-/* v2.1.2: dispatcher-shape classifier. Returns 1 when the
- * gadget's last instruction is an indirect JMP (JOP) or CALL
- * (COP) and some earlier instruction wrote to that same target
- * register — the canonical Bletsch dispatcher pattern
- *   `mov rax, [rdx] ; add rdx, 8 ; jmp rax`
- * where the jump target is loaded from memory or a register
- * that itself got set in the same gadget. Used to
- * prioritise gadgets suitable for JOP/COP payload scheduling
- * over stray indirect branches.
- *
- * which is GADGET_TERM_JMP_REG for JOP, GADGET_TERM_CALL_REG
- * for COP — callers pass whichever they're looking for. */
+/* v2.1.2 + v2.1.3: dispatcher-shape classifier. Returns 1 when
+ * the gadget's last instruction is an indirect JMP (JOP, pass
+ * GADGET_TERM_JMP_REG) or CALL (COP, pass GADGET_TERM_CALL_REG)
+ * and some earlier instruction wrote to that same target
+ * register — the canonical Bletsch dispatcher pattern:
+ *   `mov rax, [rdx] ; add rdx, 8 ; jmp rax`   — JOP
+ *   `mov rax, [rdx] ; add rdx, 8 ; call rax`  — COP
+ */
 int gadget_is_dispatcher(const gadget_t *g, gadget_term_t which);
+
+/* v2.1.4: data-oriented programming (DOP) gadget finder.
+ * Returns 1 when the gadget achieves an arbitrary write
+ * primitive without terminating in a control-flow change
+ * that leaves the scheduler: the gadget ends in RET but its
+ * body contains a `mov [rX], rY` where rX was loaded from
+ * attacker-controlled memory earlier in the same gadget.
+ * Scope for v2.1.x: minimum viable — spot the shape, mark
+ * it. Full Hu-et-al analysis is tracked for V4. */
+int gadget_is_dop_write(const gadget_t *g);
 
 /* v2.1.1: compositional variant. Walks the gadget via
  * insn_effect_decode() and folds per-instruction effects into

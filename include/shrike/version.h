@@ -33,7 +33,7 @@ extern "C" {
 
 #define SHRIKE_VERSION_MAJOR 2
 #define SHRIKE_VERSION_MINOR 1
-#define SHRIKE_VERSION_PATCH 2
+#define SHRIKE_VERSION_PATCH 4
 
 /* Compose a packed decimal version for compile-time comparisons. */
 #define SHRIKE_MK_VERSION(major, minor, patch) \

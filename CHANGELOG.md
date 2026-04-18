@@ -3,6 +3,45 @@
 All notable changes to `shrike` are listed here. Project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.4] — 2026-04-18
+
+**COP dispatcher (2.1.3) + DOP write primitive detector (2.1.4).**
+Stage VII closes. The shrike scanner now recognises three
+control-flow-subversion shapes distinctly (ROP, JOP, COP) and
+one control-flow-preserving shape (DOP arbitrary-write).
+
+### 2.1.3 — COP dispatcher
+`gadget_is_dispatcher(g, GADGET_TERM_CALL_REG)` closes the JOP
+classifier generalisation. Same walker, different terminator.
+Classic shape:
+
+```
+mov rax, [rdx]  ;  add rdx, 8  ;  call rax
+```
+
+Test fixture included.
+
+### 2.1.4 — DOP arbitrary-write
+`gadget_is_dop_write(g)` detects the minimum-viable
+data-oriented programming primitive: a gadget that loads an
+address from memory (`mov rax, [rdi]`), writes attacker
+data through it (`mov [rax], rsi`), and returns. Requires
+the write's base register to match the register loaded from
+memory earlier in the gadget. Gadget must terminate in RET
+so control flow stays inside the DOP scheduler.
+
+x86-64 only for this sprint; aarch64/RV64 DOP shapes land in
+V4 alongside the full Hu-et-al semantic model.
+
+### Stage VII complete
+v2.1.0 → v2.1.4 shipped — per-instruction IR, composer, JOP
+dispatcher, COP dispatcher, DOP write primitive. The classifier
+primitives are in place for Stage VIII (new architectures)
+and Stage XII (SMT chain-correctness proofs) to build on.
+
+Version bump 2.1.2 → 2.1.4 (skips 2.1.3 in changelog
+granularity — both features shipped in the same commit).
+
 ## [2.1.2] — 2026-04-18
 
 **JOP / COP dispatcher classifier.** `gadget_is_dispatcher(g,

@@ -178,6 +178,37 @@ main(void)
         CHECK(gadget_is_dispatcher(&g, GADGET_TERM_JMP_REG) == 0);
     }
 
+    /* v2.1.3: COP dispatcher — same walker, different terminator.
+     *   mov rax, [rdx] ; call rax
+     *   48 8B 02  FF D0 */
+    {
+        uint8_t cop[] = { 0x48, 0x8B, 0x02, 0xFF, 0xD0 };
+        gadget_t g = {0};
+        g.bytes = cop; g.length = sizeof cop; g.machine = EM_X86_64;
+        CHECK(gadget_is_dispatcher(&g, GADGET_TERM_CALL_REG) == 1);
+        CHECK(gadget_is_dispatcher(&g, GADGET_TERM_JMP_REG) == 0);
+    }
+
+    /* v2.1.4: DOP write primitive.
+     *   mov rax, [rdi]   48 8B 07      — load target addr from memory
+     *   mov [rax], rsi   48 89 30      — store attacker data via it
+     *   ret              C3            — back to the DOP scheduler
+     * Combined: 48 8B 07 48 89 30 C3 */
+    {
+        uint8_t dop[] = { 0x48, 0x8B, 0x07, 0x48, 0x89, 0x30, 0xC3 };
+        gadget_t g = {0};
+        g.bytes = dop; g.length = sizeof dop; g.machine = EM_X86_64;
+        CHECK(gadget_is_dop_write(&g) == 1);
+    }
+    /* Negative: write is present but base register wasn't loaded
+     * from memory earlier — not a DOP primitive, just a store. */
+    {
+        uint8_t not_dop[] = { 0x48, 0x89, 0x30, 0xC3 };
+        gadget_t g = {0};
+        g.bytes = not_dop; g.length = sizeof not_dop; g.machine = EM_X86_64;
+        CHECK(gadget_is_dop_write(&g) == 0);
+    }
+
     if (fails == 0) {
         printf("test_effect: ok\n");
         return 0;

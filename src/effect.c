@@ -350,6 +350,72 @@ gadget_is_dispatcher(const gadget_t *g, gadget_term_t which)
     return (writes_so_far >> target) & 1;
 }
 
+/* v2.1.4: minimum-viable DOP detector.
+ * Scan for MOV [reg], reg (opcode 0x89, mod != 3) where the
+ * base register was previously written from memory (MOV reg,
+ * [...] earlier in the same gadget). Gadget must end in RET
+ * — a control-flow break would take us out of the DOP
+ * scheduler loop. Scope: x86 only; aarch64/RV64 DOP shapes
+ * come later. */
+int
+gadget_is_dop_write(const gadget_t *g)
+{
+    if (!g || g->machine != EM_X86_64 || g->length == 0) return 0;
+
+    size_t pos = 0;
+    uint32_t loaded_from_mem = 0;
+    int ends_ret = 0;
+
+    while (pos < g->length) {
+        xdec_info_t xi;
+        if (xdec_full(g->bytes + pos, g->length - pos, &xi) < 0) break;
+        int step = xi.length;
+        if (step <= 0) break;
+
+        /* MOV reg, [r/m]  — 0x8B, mod != 3 → destination loaded
+         * from memory, flag the dst register. */
+        if (xi.opcode == 0x8B && xi.has_modrm && (xi.modrm >> 6) != 3) {
+            int rex_r = (xi.rex >> 2) & 1;
+            int reg = ((xi.modrm >> 3) & 7) | (rex_r << 3);
+            loaded_from_mem |= 1u << reg;
+        }
+        /* MOV [r/m], reg — 0x89, mod != 3 → store to memory
+         * whose base register came from an earlier mem load.
+         * That's the DOP arbitrary-write primitive. */
+        if (xi.opcode == 0x89 && xi.has_modrm && (xi.modrm >> 6) != 3) {
+            int rex_b = (xi.rex >> 0) & 1;
+            uint8_t mod = (xi.modrm >> 6) & 3;
+            uint8_t rm = xi.modrm & 7;
+            int base = -1;
+            if (xi.sib_present) {
+                /* base field 5 + mod 0 = disp32-only; reject. */
+                uint8_t bs = xi.sib & 7;
+                if (!(bs == 5 && mod == 0)) base = bs | (rex_b << 3);
+            } else if (!(mod == 0 && rm == 5)) {
+                base = rm | (rex_b << 3);
+            }
+            if (base >= 0 && ((loaded_from_mem >> base) & 1)) {
+                /* We have the write. Make sure the gadget ends
+                 * in a plain RET, not a branch out of the DOP
+                 * scheduler. */
+                size_t p = pos + (size_t)step;
+                while (p < g->length) {
+                    xdec_info_t ti;
+                    if (xdec_full(g->bytes + p, g->length - p, &ti) < 0)
+                        break;
+                    if (ti.opcode == 0xC3) { ends_ret = 1; break; }
+                    if (ti.opcode == 0xCB) { ends_ret = 1; break; }
+                    if (ti.length <= 0) break;
+                    p += (size_t)ti.length;
+                }
+                return ends_ret ? 1 : 0;
+            }
+        }
+        pos += (size_t)step;
+    }
+    return 0;
+}
+
 /* v2.1.1: compositional walk. Calls insn_effect_decode once per
  * instruction and merges the per-insn record into the gadget
  * total:
