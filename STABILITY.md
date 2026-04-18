@@ -1,9 +1,14 @@
-# shrike 2.x stability contract
+# shrike 3.x stability contract
 
-Starting at **2.0.0**, the following interfaces are guaranteed
+Starting at **3.0.0**, the following interfaces are guaranteed
 not to change in a breaking way without a major version bump
-to 3.0.0. 2.0 inherits everything 1.0 already froze (CLI, JSON,
-SARIF, exit codes) and adds the C API on top.
+to 4.0.0. 3.0 inherits everything 2.0 already froze (CLI, JSON,
+SARIF, exit codes, opaque-handle C API) and bumps the soname
+to `libshrike.so.3`.
+
+Deferred V3_ROADMAP items (PPC/MIPS scanners, Binja/IDA plugins,
+full exploit synthesis) land as 3.x patch bumps and don't
+threaten the frozen contract.
 
 ## CLI surface (frozen since 1.0)
 

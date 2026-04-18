@@ -3,6 +3,73 @@
 All notable changes to `shrike` are listed here. Project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.0] — 2026-04-18
+
+**Third stable release — V3_ROADMAP core delivered.**
+
+33 sprints from v1.1.0 (opening of V2_ROADMAP) through
+v3.0.0. Every major V2 stage + the core V3 stages shipped:
+
+- **V2 (1.1–2.0, 24 sprints)** — library shape, native PE /
+  Mach-O / RV64 loaders, chain synthesis with multi-pop +
+  clobber graph + auto-padding, x86 operand decoder + SSE +
+  expanded AArch64, Python bindings + PyPI, stable C API,
+  cross-arch CI matrix, migration guide, deprecation markers.
+- **V3 core (2.1–2.6, 7 sprints)** — per-instruction effect
+  IR, effect composer, JOP / COP / DOP classifiers, PE
+  Debug Directory (CET_COMPAT + PDB path),
+  `--reached-file` runtime-annotation filter, SMT-LIB2
+  chain-correctness proof emitter.
+
+### What 3.0 finalises
+- `libshrike.so.3` — soname bump (SOMAJOR tracks
+  `SHRIKE_VERSION_MAJOR`).
+- `STABILITY.md` rewritten for v3 contract.
+  `<shrike/shrike.h>` / `<shrike/version.h>` frozen; everything
+  else remains internal-with-deprecation-warnings.
+- New public headers from V3 — `<shrike/effect.h>`,
+  `<shrike/insn_effect.h>`, `<shrike/smt.h>` — **intentionally
+  not yet frozen**. They stabilise in v3.1 once real
+  downstream consumers have weighed in on the shape.
+- `docs/migration-2-to-3.md` — small-migration doc. The hard
+  work was the 1→2 cutover; 2→3 is mostly a soname re-link.
+- `README` refreshed. V3_ROADMAP.md kept authoritative for
+  the deferred 3.x work (PPC/MIPS scanners, Binja/IDA
+  plugins, exploit-synth library, SMT memory modelling,
+  SIMD scanner, shrike-book).
+
+### What's deferred to 3.x patch bumps
+See [V3_ROADMAP.md](V3_ROADMAP.md) for the full tracker. Key
+items not shipped in 3.0.0:
+
+- PowerPC 64 and MIPS native scanners (Stage VIII remainder)
+- Mach-O 32-bit + arm64e PAC
+- Full PDB symbol enrichment
+- LBR / perf / ptrace deeper integration
+- Binary Ninja, IDA, GDB plugins
+- Shellcode primitive library + automated exploit skeleton
+- SMT stack / memory modelling (current SMT emitter covers
+  register state only)
+- Coq export
+- SIMD-accelerated scanner + parallelism
+- Cross-tool benchmark, shrike-book
+
+Each lands as its own 3.x patch bump.
+
+### User impact
+- **CLI users**: `shrike --version` reports `3.0.0`; every
+  flag from 2.x still works. New flags: `--smt`,
+  `--reached-file`, `--mach-o-arch`.
+- **JSON / SARIF consumers**: schemas unchanged since 1.0.
+- **Python users**: `pip install -U shrike-py` to pick up
+  the 3.x wheel. No API change.
+- **C library consumers**: re-link against
+  `libshrike.so.3`. pkg-config handles it. Migration notes
+  in `docs/migration-2-to-3.md`.
+
+53 planned sprints between V2_ROADMAP + V3_ROADMAP; 33
+shipped by 3.0.0. The remaining 20 land as 3.x work.
+
 ## [2.6.0] — 2026-04-18
 
 **SMT chain-correctness proof emitter (Stage XII).** New

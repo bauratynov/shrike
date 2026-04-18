@@ -7,19 +7,22 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Language: C99](https://img.shields.io/badge/Language-C99-blue.svg)](https://en.wikipedia.org/wiki/C99)
 [![Platform: x86-64 + aarch64](https://img.shields.io/badge/Platform-x86__64%20%2B%20aarch64-green.svg)](https://refspecs.linuxfoundation.org/elf/)
-[![Release: 2.0.0](https://img.shields.io/badge/Release-2.0.0-brightgreen.svg)](CHANGELOG.md)
+[![Release: 3.0.0](https://img.shields.io/badge/Release-3.0.0-brightgreen.svg)](CHANGELOG.md)
 
 **Freestanding C99 ROP gadget scanner.** x86-64 and AArch64. Zero
 runtime dependencies. One static binary you drop on any Linux host
 — distroless container, air-gapped workstation, hardened FIPS
 build environment.
 
-> **2.0.0 — stable.** C API frozen (`<shrike/shrike.h>`), CLI +
-> JSON + SARIF + exit codes unchanged from 1.x, ships as
-> `libshrike.so.2` + `libshrike.a`. See [STABILITY.md](STABILITY.md)
-> for the contract. Upgrading from 1.x? Start at
-> [docs/migration-1-to-2.md](docs/migration-1-to-2.md). See
-> [CHANGELOG.md](CHANGELOG.md) for every minor since 0.1.0.
+> **3.0.0 — stable.** Stable C API carries over from 2.0.
+> soname bumps to `libshrike.so.3`. V3_ROADMAP's Stage VII
+> (semantic IR + JOP/COP/DOP classifiers), Stage VIII's PE
+> Debug Directory, Stage IX's runtime-reached filter, and
+> Stage XII's SMT proof emitter are all shipped. See
+> [STABILITY.md](STABILITY.md) for the v3 contract and
+> [docs/migration-2-to-3.md](docs/migration-2-to-3.md) for
+> the (small) upgrade notes. Deferred v3.x work is tracked
+> in [V3_ROADMAP.md](V3_ROADMAP.md).
 
 ---
 
@@ -106,18 +109,20 @@ shrike/
 
 ## Roadmap
 
-- **1.x (complete)** — Stage I library shape, Stage II native
-  loaders (PE, Mach-O, RV64), Stage III chain synthesis,
-  Stage IV disassembler depth, Stage V Python binding,
-  Stage VI polish + test matrix.
-- **2.0.0 (now)** — stable C API, `libshrike.so.2`, `shrike-py`
-  wheel. Migration guide at
-  [docs/migration-1-to-2.md](docs/migration-1-to-2.md).
-- **2.x → 3.0** — 29-sprint plan in [V3_ROADMAP.md](V3_ROADMAP.md):
-  symbolic gadget effects, JOP/COP/DOP enumeration, PE+PDB
-  symbol enrichment, PowerPC + MIPS, dynamic discovery via
-  LBR/perf, Binary Ninja/IDA plugins, SMT chain-correctness
-  proofs.
+- **1.x (complete)** — library shape, native loaders, chain
+  synthesis, disassembler depth, Python bindings, polish.
+  Closed at 2.0.0.
+- **2.x (complete)** — stable C API + soname bumping through
+  `libshrike.so.3` + Python package on PyPI.
+- **3.0.0 (now)** — Stage VII semantic IR, Stage VIII PE
+  Debug Directory, Stage IX `--reached-file` runtime filter,
+  Stage XII SMT chain-correctness prover. Migration guide:
+  [docs/migration-2-to-3.md](docs/migration-2-to-3.md).
+- **3.x (deferred)** — PowerPC 64 + MIPS scanners, full PDB
+  symbol enrichment, Mach-O 32 + arm64e PAC, Binary Ninja /
+  IDA / GDB plugins, exploit-synthesis library, SMT memory
+  modelling, SIMD scanner, `shrike-book`. Tracked in
+  [V3_ROADMAP.md](V3_ROADMAP.md).
 
 ## Companion tools
 
