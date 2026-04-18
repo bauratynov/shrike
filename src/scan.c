@@ -22,6 +22,15 @@
 #include <shrike/mips.h>
 #include <shrike/elf64.h>
 
+/* SSE2 is available on every real x86-64 host; wrap its use so
+ * non-x86 cross-builds keep working with the scalar path. */
+#if defined(__SSE2__)
+# include <emmintrin.h>
+# define SHRIKE_HAVE_SSE2 1
+#else
+# define SHRIKE_HAVE_SSE2 0
+#endif
+
 #include <string.h>
 
 void scan_config_default(scan_config_t *cfg)
@@ -90,6 +99,35 @@ static int x86_could_start_terminator(const elf64_segment_t *seg, size_t t,
     }
 }
 
+/* SSE2 prefilter — scan 16 bytes at a time, produce a 16-bit
+ * mask with 1-bits at positions where the byte is one of the
+ * known terminator starters (0xC3, 0xC2, 0xCA..0xCD, 0x0F, 0xFF).
+ * Caller still calls x86_could_start_terminator on each hit to
+ * apply config-driven filters (include_syscall/int/ff). */
+#if SHRIKE_HAVE_SSE2
+static uint32_t
+sse2_candidate_mask(const uint8_t *p)
+{
+    __m128i b   = _mm_loadu_si128((const __m128i *)p);
+    __m128i c3  = _mm_cmpeq_epi8(b, _mm_set1_epi8((char)0xC3));
+    __m128i c2  = _mm_cmpeq_epi8(b, _mm_set1_epi8((char)0xC2));
+    __m128i ca  = _mm_cmpeq_epi8(b, _mm_set1_epi8((char)0xCA));
+    __m128i cb  = _mm_cmpeq_epi8(b, _mm_set1_epi8((char)0xCB));
+    __m128i cc  = _mm_cmpeq_epi8(b, _mm_set1_epi8((char)0xCC));
+    __m128i cd  = _mm_cmpeq_epi8(b, _mm_set1_epi8((char)0xCD));
+    __m128i zf  = _mm_cmpeq_epi8(b, _mm_set1_epi8((char)0x0F));
+    __m128i ff  = _mm_cmpeq_epi8(b, _mm_set1_epi8((char)0xFF));
+    __m128i any = _mm_or_si128(
+                    _mm_or_si128(
+                        _mm_or_si128(c3, c2),
+                        _mm_or_si128(ca, cb)),
+                    _mm_or_si128(
+                        _mm_or_si128(cc, cd),
+                        _mm_or_si128(zf, ff)));
+    return (uint32_t)_mm_movemask_epi8(any);
+}
+#endif
+
 static size_t scan_x86(const elf64_segment_t *seg,
                        const scan_config_t   *cfg,
                        gadget_cb_t            cb,
@@ -97,8 +135,64 @@ static size_t scan_x86(const elf64_segment_t *seg,
 {
     size_t emitted = 0;
 
+#if SHRIKE_HAVE_SSE2
+    /* Fast path: SSE2 prefilter. Walk in 16-byte windows; for
+     * every candidate position call into the detailed checker.
+     * Tail bytes (seg->size < 16 or remainder after last full
+     * window) fall through to the scalar loop below. */
+    size_t t = 0;
+    if (seg->size >= 16) { size_t vec_end = seg->size - 16;
+    for (; t <= vec_end; t += 16) {
+        uint32_t mask = sse2_candidate_mask(seg->bytes + t);
+        while (mask) {
+            int bit = __builtin_ctz(mask);
+            mask &= mask - 1;
+            size_t pos = t + (size_t)bit;
+            if (!x86_could_start_terminator(seg, pos, cfg)) continue;
+            xdec_info_t term_info;
+            if (xdec_full(seg->bytes + pos, seg->size - pos,
+                          &term_info) < 0) continue;
+            if (!x86_is_terminator(&term_info, cfg)) continue;
+
+            size_t term_end = pos + (size_t)term_info.length;
+            size_t backscan = (pos > (size_t)cfg->max_backscan)
+                              ? (size_t)cfg->max_backscan : pos;
+            for (size_t offset = 0; offset <= backscan; offset++) {
+                size_t s = pos - offset;
+                size_t p = s;
+                int insns = 0, ok = 0;
+                while (p <= pos && insns < cfg->max_insn) {
+                    xdec_info_t info;
+                    if (xdec_full(seg->bytes + p,
+                                  seg->size - p, &info) < 0) break;
+                    insns++;
+                    if (p == pos) { ok = 1; break; }
+                    if (p + (size_t)info.length > pos) break;
+                    p += (size_t)info.length;
+                }
+                if (ok) {
+                    gadget_t g;
+                    g.vaddr      = seg->vaddr + s;
+                    g.offset     = s;
+                    g.length     = term_end - s;
+                    g.insn_count = insns;
+                    g.bytes      = seg->bytes + s;
+                    g.machine    = seg->machine;
+                    cb(seg, &g, ctx);
+                    emitted++;
+                }
+            }
+        }
+    }
+    }    /* close if (seg->size >= 16) */
+    /* Scalar tail for the last <16 bytes, or all bytes when
+     * seg->size < 16 (rare but real — tiny PLT stubs). */
+    for (; t < seg->size; t++) {
+        if (!x86_could_start_terminator(seg, t, cfg)) continue;
+#else
     for (size_t t = 0; t < seg->size; t++) {
         if (!x86_could_start_terminator(seg, t, cfg)) continue;
+#endif
 
         xdec_info_t term_info;
         if (xdec_full(seg->bytes + t, seg->size - t, &term_info) < 0)
