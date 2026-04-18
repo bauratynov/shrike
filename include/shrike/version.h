@@ -31,7 +31,7 @@
 extern "C" {
 #endif
 
-#define SHRIKE_VERSION_MAJOR 3
+#define SHRIKE_VERSION_MAJOR 4
 #define SHRIKE_VERSION_MINOR 0
 #define SHRIKE_VERSION_PATCH 0
 

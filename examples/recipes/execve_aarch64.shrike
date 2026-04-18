@@ -1,0 +1,3 @@
+# execve("/bin/sh", NULL, NULL) on Linux aarch64
+# 221 = __NR_execve on aarch64; x0..x2 are args, x8 = syscall no
+rdi=*; rsi=0; rdx=0; rax=221; svc

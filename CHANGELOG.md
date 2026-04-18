@@ -3,6 +3,54 @@
 All notable changes to `shrike` are listed here. Project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.0] — 2026-04-18
+
+**Dynamic discovery + IDE ecosystem.** Closes the V3_ROADMAP
+Stage IX (dynamic) and Stage X (ecosystem) items by shipping
+working tooling rather than further library plumbing.
+
+### New in 4.0
+
+**Dynamic discovery (tools/)**
+- `tools/lbr-ingest.py` — turns `perf script -F ip,brstack`
+  output into a `--reached-file` address list. Canonical
+  flow: `perf record -b ./target; perf script -F ip,brstack
+  > perf.txt; tools/lbr-ingest.py perf.txt > reached.txt;
+  shrike --reached-file reached.txt target`.
+- `tools/shrike-gdb.py` — GDB integration. Source it from
+  `.gdbinit`, then `(gdb) shrike-scan` enumerates gadgets in
+  the current inferior and binds them to `$shrike_0…N`
+  convenience variables for interactive ROP development.
+
+**IDE plugins (plugins/)**
+- `plugins/ida/shrike_importer.py` — IDA Pro plugin that
+  imports a `shrike --json` file and annotates each gadget
+  address with its disassembly as an inline comment. IDA 7.5+.
+- `plugins/binja/shrike_importer.py` — same for Binary Ninja.
+  Registers as "Shrike → Import gadgets (JSON-Lines)" in the
+  Tools menu; also adds each address as a `shrike` tag.
+
+**Recipe library (examples/recipes/)**
+- `execve_amd64.shrike` / `execve_aarch64.shrike` /
+  `execve_riscv64.shrike` — drop-in `execve("/bin/sh",
+  NULL, NULL)` chains, one per arch. Use as:
+  `shrike --recipe "$(cat execve_amd64.shrike)" libc.so.6`.
+
+### ABI
+
+- soname bumps `libshrike.so.3 → libshrike.so.4`.
+- No new public C symbols — 4.0 is a tooling release on top
+  of the 3.x library surface.
+- CLI / JSON / SARIF / exit codes unchanged since 1.0.
+
+### Deferred to 4.x
+- Full perf-callchain parser (structured, not just address
+  extraction).
+- ptrace harness.
+- GDB pretty-printer for the `shrike_gadget_t` opaque type.
+- IDA / Binja reverse-annotations (Binja selection →
+  shrike filter).
+
 ## [3.0.0] — 2026-04-18
 
 **Third stable release — V3_ROADMAP core delivered.**

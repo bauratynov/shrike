@@ -1,0 +1,3 @@
+# execve("/bin/sh", NULL, NULL) on Linux riscv64
+# 221 = __NR_execve (same as aarch64 on modern kernels)
+a0=*; a1=0; a2=0; a7=221; ecall

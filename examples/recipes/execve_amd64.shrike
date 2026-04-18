@@ -1,0 +1,6 @@
+# execve("/bin/sh", NULL, NULL) on Linux x86_64
+# 59 = __NR_execve; rdi = argv[0] pointer, rsi/rdx = NULL
+#
+# Drop into shrike as:
+#   shrike --recipe "$(cat execve_amd64.shrike)" libc.so.6
+rdi=*; rsi=0; rdx=0; rax=59; syscall
