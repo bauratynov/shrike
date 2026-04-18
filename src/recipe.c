@@ -205,10 +205,26 @@ static int resolve_text(const recipe_t *r, const regidx_t *idx,
                 continue;
             }
 
-            uint64_t g_addr = idx->addrs[s->reg][0];
-            uint32_t stack  = idx->stack_consumed[s->reg][0];
-            fprintf(f, "0x%016" PRIx64 "  # pop %s ; ret  (stack: %u bytes)\n",
-                    g_addr, rn, (unsigned)stack);
+            /* v5.3.0: CET-aware pick. When the image sets
+             * cet_ibt_required, prefer endbr-start gadgets so
+             * the chain survives hardware IBT checks. Falls
+             * back to first-observed on registers where no
+             * endbr-start gadget exists — chain may not survive
+             * CET, we annotate that below. */
+            int cet_aware = idx->cet_ibt_required;
+            int pidx = regidx_pick_index(idx, s->reg, cet_aware);
+            if (pidx < 0) pidx = 0;
+            uint64_t g_addr = idx->addrs[s->reg][pidx];
+            uint32_t stack  = idx->stack_consumed[s->reg][pidx];
+            int      endbr  = idx->endbr_start[s->reg][pidx];
+            const char *tag = cet_aware
+                             ? (endbr ? " [cet: endbr-start]"
+                                      : " [cet: FAIL — no endbr-start]")
+                             : "";
+            fprintf(f,
+                "0x%016" PRIx64 "  # pop %s ; ret  (stack: %u bytes)%s\n",
+                g_addr, rn, (unsigned)stack, tag);
+            if (cet_aware && !endbr) missing++;
             committed |= 1u << s->reg;
             if (s->is_literal) {
                 fprintf(f, "0x%016" PRIx64 "  # %s = 0x%" PRIx64 "\n",
@@ -237,8 +253,17 @@ static int resolve_text(const recipe_t *r, const regidx_t *idx,
                 const char *mnemo = "syscall";
                 if (machine == EM_AARCH64)    mnemo = "svc";
                 else if (machine == EM_RISCV) mnemo = "ecall";
-                fprintf(f, "0x%016" PRIx64 "  # %s\n",
-                        idx->syscall_addrs[0], mnemo);
+                int cet_aware = idx->cet_ibt_required;
+                int sidx = regidx_pick_syscall_index(idx, cet_aware);
+                if (sidx < 0) sidx = 0;
+                int endbr = idx->syscall_endbr_start[sidx];
+                const char *tag = cet_aware
+                                 ? (endbr ? " [cet: endbr-start]"
+                                          : " [cet: FAIL — no endbr-start]")
+                                 : "";
+                if (cet_aware && !endbr) missing++;
+                fprintf(f, "0x%016" PRIx64 "  # %s%s\n",
+                        idx->syscall_addrs[sidx], mnemo, tag);
             }
         } else if (s->op == RSTMT_RET) {
             fprintf(f, "# (explicit ret — caller places an address here)\n");
@@ -287,9 +312,19 @@ static int resolve_pwntools(const recipe_t *r, const regidx_t *idx,
                 missing++;
                 continue;
             }
-            uint64_t g = idx->addrs[s->reg][0];
-            fprintf(f, "rop.raw(0x%" PRIx64 ")           # pop %s ; ret\n",
-                    g, rn);
+            int cet_aware = idx->cet_ibt_required;
+            int pidx = regidx_pick_index(idx, s->reg, cet_aware);
+            if (pidx < 0) pidx = 0;
+            uint64_t g = idx->addrs[s->reg][pidx];
+            int      endbr = idx->endbr_start[s->reg][pidx];
+            const char *cet_note = cet_aware
+                                   ? (endbr ? " cet-ok"
+                                            : " CET-FAIL")
+                                   : "";
+            fprintf(f,
+                "rop.raw(0x%" PRIx64 ")           # pop %s ; ret%s\n",
+                g, rn, cet_note);
+            if (cet_aware && !endbr) missing++;
             if (s->is_literal) {
                 fprintf(f, "rop.raw(0x%" PRIx64 ")           # %s = 0x%" PRIx64 "\n",
                         s->value, rn, s->value);
@@ -304,9 +339,19 @@ static int resolve_pwntools(const recipe_t *r, const regidx_t *idx,
                 fprintf(f, "# MISSING: no syscall gadget\n");
                 missing++;
             } else {
-                fprintf(f, "rop.raw(0x%" PRIx64 ")           # %s\n",
-                        idx->syscall_addrs[0],
-                        machine == EM_AARCH64 ? "svc" : "syscall");
+                int cet_aware = idx->cet_ibt_required;
+                int sidx = regidx_pick_syscall_index(idx, cet_aware);
+                if (sidx < 0) sidx = 0;
+                int endbr = idx->syscall_endbr_start[sidx];
+                const char *cet_note = cet_aware
+                                       ? (endbr ? " cet-ok"
+                                                : " CET-FAIL")
+                                       : "";
+                if (cet_aware && !endbr) missing++;
+                fprintf(f, "rop.raw(0x%" PRIx64 ")           # %s%s\n",
+                        idx->syscall_addrs[sidx],
+                        machine == EM_AARCH64 ? "svc" : "syscall",
+                        cet_note);
             }
         } else if (s->op == RSTMT_RET) {
             fprintf(f, "# TODO: caller-provided return address\n");

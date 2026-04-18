@@ -395,14 +395,48 @@ regidx_find_multi_exact(const regidx_t *ri, uint32_t needed)
     return NULL;
 }
 
+int
+regidx_pick_index(const regidx_t *ri, int reg, int cet_aware)
+{
+    if (!ri || reg < 0 || reg >= REGIDX_MAX_REGS) return -1;
+    if (ri->counts[reg] == 0) return -1;
+    if (cet_aware) {
+        for (uint16_t i = 0; i < ri->counts[reg]; i++) {
+            if (ri->endbr_start[reg][i]) return (int)i;
+        }
+        /* No endbr-start gadget exists for this register. Fall
+         * through to the first-observed as a last-ditch pick —
+         * the resolver emits a chain-survives-cet warning at
+         * report time when this happens. */
+    }
+    return 0;
+}
+
+int
+regidx_pick_syscall_index(const regidx_t *ri, int cet_aware)
+{
+    if (!ri || ri->syscall_count == 0) return -1;
+    if (cet_aware) {
+        for (uint16_t i = 0; i < ri->syscall_count; i++) {
+            if (ri->syscall_endbr_start[i]) return (int)i;
+        }
+    }
+    return 0;
+}
+
 const regidx_multi_t *
 regidx_find_multi(const regidx_t *ri, uint32_t needed,
                   uint32_t committed, int strict_cover)
 {
     /* Prefer smaller writes_mask popcount — fewer padding slots,
-     * tighter chain. Stable order so outputs are reproducible. */
+     * tighter chain. Stable order so outputs are reproducible.
+     * When CET IBT is required for the containing image, also
+     * prefer endbr-start gadgets at the same popcount tier —
+     * they survive IBT while the others die. */
     const regidx_multi_t *best = NULL;
     int best_pop = 0;
+    int best_endbr = 0;
+    int cet_aware = ri->cet_ibt_required;
 
     for (uint16_t i = 0; i < ri->multi_count; i++) {
         const regidx_multi_t *m = &ri->multi[i];
@@ -410,9 +444,16 @@ regidx_find_multi(const regidx_t *ri, uint32_t needed,
         if ((m->writes_mask & committed) != 0) continue;
         if (strict_cover && m->writes_mask != needed) continue;
         int pop = popcount32(m->writes_mask);
-        if (!best || pop < best_pop) {
-            best = m;
-            best_pop = pop;
+        int endbr = m->endbr_start ? 1 : 0;
+        if (!best) {
+            best = m; best_pop = pop; best_endbr = endbr; continue;
+        }
+        /* Tiebreak order: smallest popcount wins; at equal
+         * popcount, cet_aware + endbr=1 wins over endbr=0. */
+        if (pop < best_pop) {
+            best = m; best_pop = pop; best_endbr = endbr;
+        } else if (pop == best_pop && cet_aware && endbr && !best_endbr) {
+            best = m; best_endbr = 1;
         }
     }
     return best;

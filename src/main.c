@@ -693,6 +693,62 @@ loaded:
         }
         if (pivots_mode && pivots_machine == 0) pivots_machine = e.machine;
 
+        /* v5.3.0: detect CET/BTI posture and plumb into the
+         * regidx so the chain resolver can prefer IBT-landing-
+         * pad gadgets. Done unconditionally — the CLI cet-
+         * posture flag adds human-readable output, but the
+         * resolver wants the flags regardless. */
+        if (ri_initialised) {
+            int ibt = 0, shstk = 0;
+            if (e.format == 1) {
+                /* PE: DllCharacteristicsEx carries CET_COMPAT. */
+                if (e.pe_dll_chars_ex &
+                    IMAGE_DLLCHARACTERISTICS_EX_CET_COMPAT) {
+                    ibt = shstk = 1;
+                }
+            } else {
+                /* ELF: walk PT_GNU_PROPERTY. Same traversal as
+                 * the --cet-posture code below, condensed. */
+                for (size_t pi = 0; pi < e.phnum; pi++) {
+                    const Elf64_Phdr *ph = &e.phdr[pi];
+                    if (ph->p_type != PT_GNU_PROPERTY) continue;
+                    const uint8_t *p = e.map + ph->p_offset;
+                    const uint8_t *end = p + ph->p_filesz;
+                    while (p + 12 <= end) {
+                        uint32_t descsz = *(const uint32_t *)(p + 4);
+                        uint32_t ntype  = *(const uint32_t *)(p + 8);
+                        const uint8_t *pname = p + 12;
+                        const uint8_t *pdesc = pname + 4;
+                        const uint8_t *pnext = pdesc + ((descsz + 7) & ~7u);
+                        if (pnext > end) break;
+                        if (ntype == 5 &&
+                            memcmp(pname, "GNU", 4) == 0) {
+                            const uint8_t *q = pdesc;
+                            while (q + 8 <= pdesc + descsz) {
+                                uint32_t pt = *(const uint32_t *)q;
+                                uint32_t pd = *(const uint32_t *)(q + 4);
+                                if (pt == 0xc0000002u && pd == 4) {
+                                    uint32_t f = *(const uint32_t *)(q + 8);
+                                    if (f & 1) ibt = 1;
+                                    if (f & 2) shstk = 1;
+                                }
+                                if (pt == 0xc0000000u && pd == 4) {
+                                    uint32_t f = *(const uint32_t *)(q + 8);
+                                    if (f & 1) ibt = 1;  /* BTI ≈ IBT */
+                                }
+                                q += 8 + ((pd + 7) & ~7u);
+                            }
+                        }
+                        p = pnext;
+                    }
+                }
+            }
+            /* OR with prior state — multi-binary scans take the
+             * strictest posture across inputs. */
+            ri.cet_ibt_required   |= (uint8_t)ibt;
+            ri.cet_shstk_required |= (uint8_t)shstk;
+        }
+
         /* v0.19.0: CET / BTI posture — parse PT_GNU_PROPERTY.
          * v1.2.1: PE inputs read DllCharacteristics instead. */
         if (cet_posture && e.format == 1) {

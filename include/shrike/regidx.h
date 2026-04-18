@@ -127,6 +127,23 @@ const regidx_multi_t *regidx_find_multi(const regidx_t *ri,
                                         uint32_t committed,
                                         int      strict_cover);
 
+/* v5.3.0: CET-aware picker. Returns the preferred index into
+ * ri->addrs[r][] for the given register. When `cet_aware` is
+ * non-zero and the register has any endbr-starting entries,
+ * returns the first such. Otherwise returns 0 (the first-
+ * observed, matching the pre-5.3 behaviour).
+ *
+ * Callers use it as:
+ *
+ *   int idx = regidx_pick_index(ri, reg, cet_aware);
+ *   uint64_t addr = ri->addrs[reg][idx];
+ *
+ * Returns -1 if the register has no observed gadgets. */
+int regidx_pick_index(const regidx_t *ri, int reg, int cet_aware);
+
+/* Same for syscall terminators. -1 if none. */
+int regidx_pick_syscall_index(const regidx_t *ri, int cet_aware);
+
 #ifdef __cplusplus
 }
 #endif
