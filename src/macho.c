@@ -21,6 +21,7 @@
 
 #include <shrike/macho.h>
 #include <shrike/elf64.h>
+#include <shrike/warning.h>
 
 #include <errno.h>
 #include <fcntl.h>
@@ -136,7 +137,7 @@ parse_fat(elf64_t *e, uint32_t magic)
     if (pick_idx == UINT32_MAX) {
         pick_idx = 0;
         if (!g_pref_cputype) {
-            fprintf(stderr,
+            shrike_warn(
                 "shrike: Mach-O universal image — no --mach-o-arch set, "
                 "scanning first slice (of %u). Pass --mach-o-arch "
                 "<x86_64|arm64> to pick deterministically.\n",

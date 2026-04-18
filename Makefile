@@ -64,7 +64,7 @@ LIB_SRC := \
     src/scan.c src/format.c \
     src/strset.c src/cet.c src/category.c src/regidx.c src/recipe.c \
     src/sarif.c src/pivots.c src/effect.c src/insn_effect.c \
-    src/smt.c src/version.c src/shrike_api.c
+    src/smt.c src/warning.c src/version.c src/shrike_api.c
 LIB_OBJ     := $(LIB_SRC:.c=.o)
 LIB_PIC_OBJ := $(LIB_SRC:.c=.pic.o)
 LIB         := libshrike.a

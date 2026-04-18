@@ -147,6 +147,33 @@ shrike_arch_t shrike_gadget_arch(const shrike_gadget_t *g);
 int         shrike_errno(const shrike_ctx_t *ctx);
 const char *shrike_strerror(int err);
 
+/* --- Warnings. --- */
+
+/* v5.2.0: shrike emits advisory messages when it encounters
+ * things like a fat Mach-O with no --mach-o-arch set, or a
+ * PE with more sections than SHRIKE_MAX_SEGMENTS can track.
+ *
+ * Default behaviour: messages go to stderr. Embedders of
+ * libshrike who want silence or custom routing install a
+ * callback via shrike_set_warning_callback. Passing NULL
+ * restores the default stderr routing; calling with a non-
+ * NULL callback of &shrike_warning_silent suppresses all
+ * messages.
+ *
+ * The callback is called with a plain-text message that is
+ * NOT null-terminated at any particular length — treat it
+ * like a normal C string. Thread-safety: the callback itself
+ * must be thread-safe; shrike never calls it concurrently
+ * from its own threads (shrike is single-threaded today). */
+typedef void (*shrike_warning_cb)(const char *msg, void *user);
+
+void shrike_set_warning_callback(shrike_warning_cb cb, void *user);
+
+/* Pre-built callback that drops all messages. Install as:
+ *   shrike_set_warning_callback(shrike_warning_silent, NULL);
+ */
+void shrike_warning_silent(const char *msg, void *user);
+
 #ifdef __cplusplus
 }
 #endif
