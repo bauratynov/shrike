@@ -163,7 +163,72 @@ int xdec_full(const uint8_t *buf, size_t max, xdec_info_t *info)
         if (p >= max) return -1;
     }
 
-    /* ---------- 3. opcode ---------- */
+    /* ---------- 3. VEX prefix (C4 / C5) ---------- */
+    /* In 64-bit mode, C4 and C5 are VEX prefixes — the classic
+     * LES / LDS encodings they collided with only exist in legacy
+     * modes. We do length-only VEX handling here: skip the VEX
+     * encoding bytes, then decode the following opcode via the
+     * normal 0F map (for C5) or 0F 38 / 0F 3A map (for C4's
+     * m-mmmm field). Operand-level semantics (which register
+     * goes where, L=1 meaning 256-bit) are deferred to the
+     * renderer — they don't affect length.
+     *
+     * C5 (2-byte VEX):
+     *     C5  [R'.vvvv.L.pp]  opcode  modrm ...
+     * C4 (3-byte VEX):
+     *     C4  [R'.X'.B'.mmmmm]  [W.vvvv.L.pp]  opcode  modrm ... */
+    if (buf[p] == 0xC5 && p + 1 < max) {
+        p++;                     /* consume C5 */
+        p++;                     /* consume byte1 (R'.vvvv.L.pp) */
+        if (p >= max) return -1;
+        uint8_t op = buf[p++];
+        info->map    = 2;        /* C5 implies 0F map */
+        info->opcode = op;
+        int has_modrm = 1, imm_bytes = 0;
+        /* A few VEX opcodes carry an imm8 (e.g. VPSHUFD, VPALIGNR,
+         * VPCMP*). Assume imm8 only if the classify_0f says so;
+         * the generic "VEX has no imm" assumption is right for
+         * the majority. */
+        classify_0f(op, info->op66, info->rex_w,
+                    &has_modrm, &imm_bytes);
+        info->has_modrm = (uint8_t)has_modrm;
+        info->imm_bytes = (uint8_t)imm_bytes;
+        goto do_modrm;
+    }
+    if (buf[p] == 0xC4 && p + 2 < max) {
+        p++;                     /* consume C4 */
+        uint8_t b1 = buf[p++];
+        uint8_t b2 = buf[p++];
+        uint8_t mmmm = b1 & 0x1f;
+        info->rex_w = (b2 >> 7) & 1u;   /* W bit lives in byte2 */
+        if (p >= max) return -1;
+        uint8_t op = buf[p++];
+        int has_modrm = 1, imm_bytes = 0;
+        if (mmmm == 0x01) {                /* 0F map */
+            info->map = 2;
+            info->opcode = op;
+            classify_0f(op, info->op66, info->rex_w,
+                        &has_modrm, &imm_bytes);
+        } else if (mmmm == 0x02) {         /* 0F 38 map */
+            info->map    = 3;
+            info->opcode = op;
+            imm_bytes    = 0;
+        } else if (mmmm == 0x03) {         /* 0F 3A map */
+            info->map    = 3;
+            info->opcode = op;
+            imm_bytes    = 1;
+        } else {
+            /* Reserved VEX map — reject so the scanner treats
+             * the bytes as non-starters rather than walking into
+             * them as if they were instructions. */
+            return -1;
+        }
+        info->has_modrm = (uint8_t)has_modrm;
+        info->imm_bytes = (uint8_t)imm_bytes;
+        goto do_modrm;
+    }
+
+    /* ---------- 3. legacy / 0F opcode ---------- */
     uint8_t op = buf[p++];
     int has_modrm = 0;
     int imm_bytes = 0;
@@ -218,9 +283,12 @@ int xdec_full(const uint8_t *buf, size_t max, xdec_info_t *info)
 
     info->has_modrm = (uint8_t)has_modrm;
 
+do_modrm:
     /* ---------- 4. ModR/M + SIB + displacement ---------- */
+    {
     int disp = 0;
-    int grp3_peek = (info->map == 1 && (op == 0xF6 || op == 0xF7));
+    int grp3_peek = (info->map == 1 &&
+                     (info->opcode == 0xF6 || info->opcode == 0xF7));
 
     if (has_modrm) {
         if (p >= max) return -1;
@@ -277,6 +345,7 @@ int xdec_full(const uint8_t *buf, size_t max, xdec_info_t *info)
 
     info->length = (int)p;
     return 0;
+    }   /* end of do_modrm scope */
 }
 
 int xdec_length(const uint8_t *buf, size_t max, int *out_len)
