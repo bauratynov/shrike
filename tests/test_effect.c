@@ -221,6 +221,33 @@ main(void)
         CHECK(gadget_is_dispatcher(&g, GADGET_TERM_CALL_REG) == 0);
     }
 
+    /* v2.1.3 RV64 dispatcher shape.
+     *   ld   x6, 0(x5)   — load target from memory
+     *   jalr x0, x6, 0   — jump to it (JALR with rd=x0 is jump)
+     *
+     * ld  x6, 0(x5) = 0b 000000000000 00101 011 00110 0000011
+     *   imm=0 rs1=5 funct3=3 rd=6 opcode=0x03 → 0x0002B303
+     * jalr x0, x6, 0 = 0b 000000000000 00110 000 00000 1100111
+     *   imm=0 rs1=6 funct3=0 rd=0 opcode=0x67 → 0x00030067
+     */
+    {
+        uint32_t ld   = 0x0002B303u;
+        uint32_t jalr = 0x00030067u;
+        uint8_t rv_disp[8];
+        rv_disp[0] = (uint8_t)ld;
+        rv_disp[1] = (uint8_t)(ld >> 8);
+        rv_disp[2] = (uint8_t)(ld >> 16);
+        rv_disp[3] = (uint8_t)(ld >> 24);
+        rv_disp[4] = (uint8_t)jalr;
+        rv_disp[5] = (uint8_t)(jalr >> 8);
+        rv_disp[6] = (uint8_t)(jalr >> 16);
+        rv_disp[7] = (uint8_t)(jalr >> 24);
+        gadget_t g = {0};
+        g.bytes = rv_disp; g.length = sizeof rv_disp;
+        g.machine = EM_RISCV;
+        CHECK(gadget_is_dispatcher(&g, GADGET_TERM_CALL_REG) == 1);
+    }
+
     /* v2.1.4: DOP write primitive.
      *   mov rax, [rdi]   48 8B 07      — load target addr from memory
      *   mov [rax], rsi   48 89 30      — store attacker data via it

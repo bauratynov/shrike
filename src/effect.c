@@ -332,8 +332,17 @@ gadget_is_dispatcher(const gadget_t *g, gadget_term_t which)
                     target = (int)((insn >> 5) & 0x1f);
                 }
             } else if (g->machine == EM_RISCV) {
-                /* c.jr / c.jalr encode rs1 at bits 11..7. */
-                if (pos + 2 <= g->length) {
+                /* Two cases:
+                 *   32-bit JALR — rs1 at bits 19..15
+                 *   16-bit c.jr/c.jalr — rs1 at bits 11..7
+                 * ie.length tells us which encoding we're on. */
+                if (ie.length == 4 && pos + 4 <= g->length) {
+                    uint32_t w = (uint32_t)g->bytes[pos] |
+                                 ((uint32_t)g->bytes[pos + 1] << 8) |
+                                 ((uint32_t)g->bytes[pos + 2] << 16) |
+                                 ((uint32_t)g->bytes[pos + 3] << 24);
+                    target = (int)((w >> 15) & 0x1f);
+                } else if (pos + 2 <= g->length) {
                     uint16_t h = (uint16_t)(g->bytes[pos] |
                                             (g->bytes[pos + 1] << 8));
                     target = (int)((h >> 7) & 0x1f);

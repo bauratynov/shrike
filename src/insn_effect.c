@@ -226,32 +226,47 @@ decode_rv(const uint8_t *b, size_t max, insn_effect_t *o)
         uint32_t rs1    = (w >> 15) & 0x1f;
         uint32_t rd     = (w >> 7)  & 0x1f;
 
-        /* ld rd, imm(sp) */
-        if (opcode == 0x03 && funct3 == 0x3 && rs1 == 2) {
+        /* ld rd, imm(rs1) — generalised from sp-only to any base. */
+        if (opcode == 0x03 && funct3 == 0x3) {
             if (rd != 0) o->writes_mask = 1u << rd;
+            o->reads_mask = 1u << rs1;
+            /* Special case the sp-stack-pop path so stack_delta
+             * gets credited correctly for epilogue walkers. */
+            if (rs1 == 2) {
+                /* reads_mask stays set — the pop still reads sp */
+            }
             o->flags  = INSN_EFFECT_MEM_READ | INSN_EFFECT_KNOWN;
             o->length = 4;
             return 4;
         }
-        /* addi sp, sp, imm */
-        if (opcode == 0x13 && funct3 == 0 && rd == 2 && rs1 == 2) {
+        /* addi rd, rs1, imm — generalised from sp-only. Used as
+         * both MV (rd, rs1, 0) and ADDI for pointer math. */
+        if (opcode == 0x13 && funct3 == 0) {
             int32_t imm = (int32_t)(w >> 20);
             if (imm & 0x800) imm -= 0x1000;
-            o->stack_delta = imm;
-            o->flags       = INSN_EFFECT_KNOWN;
-            o->length      = 4;
+            if (rd != 0) o->writes_mask = 1u << rd;
+            o->reads_mask = 1u << rs1;
+            if (rd == 2 && rs1 == 2) o->stack_delta = imm;
+            o->flags  = INSN_EFFECT_KNOWN;
+            o->length = 4;
             return 4;
         }
         if (riscv_is_ret(b, il)) {
             o->flags      = INSN_EFFECT_KNOWN;
             o->terminator = GADGET_TERM_RET;
+            o->reads_mask = 1u << 1;   /* x1 (ra) */
             o->length     = 4;
             return 4;
         }
         riscv_term_t k = riscv_classify_terminator(b, il);
         if (k == RV_TERM_ECALL)  { o->terminator = GADGET_TERM_SYSCALL; goto term; }
         if (k == RV_TERM_EBREAK) { o->terminator = GADGET_TERM_INT;     goto term; }
-        if (k == RV_TERM_JALR)   { o->terminator = GADGET_TERM_CALL_REG; goto term; }
+        if (k == RV_TERM_JALR)   {
+            o->terminator = GADGET_TERM_CALL_REG;
+            /* JALR rd, rs1, imm: target is rs1. */
+            o->reads_mask = 1u << rs1;
+            goto term;
+        }
         return -1;
 term:
         o->flags  = INSN_EFFECT_KNOWN;
