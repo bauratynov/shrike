@@ -36,6 +36,26 @@ uint32_t arm64_read_insn(const uint8_t *buf);
  * Unknown encodings produce ".word 0xXXXXXXXX" as a safe fallback. */
 int arm64_render_insn(char *buf, size_t buflen, uint32_t insn);
 
+/* v5.4.0: pointer-authentication instructions (ARMv8.3-A).
+ *   AUT*  verify PAC bits of a pointer (fault on mismatch)
+ *   PAC*  sign a pointer (source of exploit primitives)
+ * The RETAA/RETAB returns already tracked via
+ * arm64_is_terminator; this classifier covers the non-return
+ * variants that appear inside gadget bodies. */
+typedef enum {
+    ARM64_PAC_NONE = 0,
+    ARM64_PAC_AUTIA,
+    ARM64_PAC_AUTIB,
+    ARM64_PAC_AUTDA,
+    ARM64_PAC_AUTDB,
+    ARM64_PAC_PACIA,
+    ARM64_PAC_PACIB,
+    ARM64_PAC_PACDA,
+    ARM64_PAC_PACDB
+} arm64_pac_t;
+
+arm64_pac_t arm64_pac_kind(uint32_t insn);
+
 #ifdef __cplusplus
 }
 #endif

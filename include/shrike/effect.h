@@ -76,6 +76,16 @@ typedef struct {
      * is a system call. */
     uint8_t is_pivot;
     uint8_t has_syscall;
+    /* v5.4.0: pointer-authentication reach. Set to 1 iff the
+     * gadget contains any AUT* instruction — these fault on
+     * arm64e when the pointer's PAC bits don't match the
+     * expected signature. Chains that include such gadgets
+     * need a sign oracle to be reliable. */
+    uint8_t has_pac_auth;
+    /* Set to 1 iff the gadget contains any PAC* instruction
+     * — useful as a primitive (sign oracle) but also a hint
+     * that the containing function expects PAC-enabled input. */
+    uint8_t has_pac_sign;
 } gadget_effect_t;
 
 /* Compute the effect record for `g`. Returns 0 on success; if the

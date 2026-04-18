@@ -105,10 +105,11 @@ static void add_addr(uint64_t *slots, uint16_t *count, uint64_t addr)
  * lets the chain emitter pad payloads correctly for multi-pop
  * gadgets without a second parse pass.
  * v5.3.0: also record endbr_start so CET-aware chain selection
- * can prefer IBT-landing-pad gadgets when the target has CET on. */
+ * can prefer IBT-landing-pad gadgets when the target has CET on.
+ * v5.4.0: record shstk_safe + pac_hostile mitigation flags. */
 static void
 regidx_credit(regidx_t *ri, int r, uint64_t addr, uint32_t stack,
-              int endbr)
+              int endbr, int shstk_safe, int pac_hostile)
 {
     if (r < 0 || r >= REGIDX_MAX_REGS) return;
     if (ri->counts[r] >= REGIDX_MAX_PER) return;
@@ -119,6 +120,8 @@ regidx_credit(regidx_t *ri, int r, uint64_t addr, uint32_t stack,
     ri->addrs[r][idx]          = addr;
     ri->stack_consumed[r][idx] = stack;
     ri->endbr_start[r][idx]    = endbr ? 1 : 0;
+    ri->shstk_safe[r][idx]     = shstk_safe ? 1 : 0;
+    ri->pac_hostile[r][idx]    = pac_hostile ? 1 : 0;
 }
 
 /* v1.5.2: record a multi-pop gadget (writes_mask popcount >= 2).
@@ -128,7 +131,7 @@ regidx_credit(regidx_t *ri, int r, uint64_t addr, uint32_t stack,
 static void
 regidx_credit_multi(regidx_t *ri, uint32_t mask, uint64_t addr,
                     uint32_t stack, const int *order, int order_count,
-                    int endbr)
+                    int endbr, int shstk_safe, int pac_hostile)
 {
     if (ri->multi_count >= REGIDX_MAX_MULTI) return;
     for (uint16_t i = 0; i < ri->multi_count; i++) {
@@ -144,6 +147,8 @@ regidx_credit_multi(regidx_t *ri, uint32_t mask, uint64_t addr,
     for (int i = 0; i < n; i++) m->pop_order[i] = (uint8_t)order[i];
     m->pop_count    = (uint8_t)n;
     m->endbr_start  = (uint8_t)(endbr ? 1 : 0);
+    m->shstk_safe   = (uint8_t)(shstk_safe ? 1 : 0);
+    m->pac_hostile  = (uint8_t)(pac_hostile ? 1 : 0);
 }
 
 static int is_x86_ret(uint8_t b) { return b == 0xC3; }
@@ -180,16 +185,24 @@ static void observe_x86(regidx_t *ri, const gadget_t *g)
 
     gadget_effect_t ef;
     gadget_effect_compute(g, &ef);
-    int endbr = cet_starts_endbr(g);
+    int endbr       = cet_starts_endbr(g);
+    /* v5.4.0: shstk_safe = gadget's terminator doesn't pop from
+     * the shadow stack. The existing cet_shstk_blocked predicate
+     * returns 1 iff the gadget ends in a RET that would collide
+     * with SHSTK; invert to get safety. */
+    int shstk_safe  = !cet_shstk_blocked(g);
+    int pac_hostile = ef.has_pac_auth ? 1 : 0;
 
     for (int i = 0; i < n_regs; i++) {
-        regidx_credit(ri, regs[i], g->vaddr, ef.stack_consumed, endbr);
+        regidx_credit(ri, regs[i], g->vaddr, ef.stack_consumed,
+                      endbr, shstk_safe, pac_hostile);
     }
     if (n_regs >= 2) {
         uint32_t mask = 0;
         for (int i = 0; i < n_regs; i++) mask |= 1u << regs[i];
         regidx_credit_multi(ri, mask, g->vaddr, ef.stack_consumed,
-                            regs, n_regs, endbr);
+                            regs, n_regs,
+                            endbr, shstk_safe, pac_hostile);
     }
 }
 
@@ -246,16 +259,24 @@ static void observe_a64(regidx_t *ri, const gadget_t *g)
 
     gadget_effect_t ef;
     gadget_effect_compute(g, &ef);
-    int endbr = cet_starts_endbr(g);
+    int endbr       = cet_starts_endbr(g);
+    /* v5.4.0: shstk_safe = gadget's terminator doesn't pop from
+     * the shadow stack. The existing cet_shstk_blocked predicate
+     * returns 1 iff the gadget ends in a RET that would collide
+     * with SHSTK; invert to get safety. */
+    int shstk_safe  = !cet_shstk_blocked(g);
+    int pac_hostile = ef.has_pac_auth ? 1 : 0;
 
     for (int i = 0; i < n_regs; i++) {
-        regidx_credit(ri, regs[i], g->vaddr, ef.stack_consumed, endbr);
+        regidx_credit(ri, regs[i], g->vaddr, ef.stack_consumed,
+                      endbr, shstk_safe, pac_hostile);
     }
     if (n_regs >= 2) {
         uint32_t mask = 0;
         for (int i = 0; i < n_regs; i++) mask |= 1u << regs[i];
         regidx_credit_multi(ri, mask, g->vaddr, ef.stack_consumed,
-                            regs, n_regs, endbr);
+                            regs, n_regs,
+                            endbr, shstk_safe, pac_hostile);
     }
 }
 
@@ -334,16 +355,24 @@ static void observe_rv(regidx_t *ri, const gadget_t *g)
 
     gadget_effect_t ef;
     gadget_effect_compute(g, &ef);
-    int endbr = cet_starts_endbr(g);
+    int endbr       = cet_starts_endbr(g);
+    /* v5.4.0: shstk_safe = gadget's terminator doesn't pop from
+     * the shadow stack. The existing cet_shstk_blocked predicate
+     * returns 1 iff the gadget ends in a RET that would collide
+     * with SHSTK; invert to get safety. */
+    int shstk_safe  = !cet_shstk_blocked(g);
+    int pac_hostile = ef.has_pac_auth ? 1 : 0;
 
     for (int i = 0; i < n_regs; i++) {
-        regidx_credit(ri, regs[i], g->vaddr, ef.stack_consumed, endbr);
+        regidx_credit(ri, regs[i], g->vaddr, ef.stack_consumed,
+                      endbr, shstk_safe, pac_hostile);
     }
     if (n_regs >= 2) {
         uint32_t mask = 0;
         for (int i = 0; i < n_regs; i++) mask |= 1u << regs[i];
         regidx_credit_multi(ri, mask, g->vaddr, ef.stack_consumed,
-                            regs, n_regs, endbr);
+                            regs, n_regs,
+                            endbr, shstk_safe, pac_hostile);
     }
 }
 
@@ -363,19 +392,19 @@ void regidx_observe(regidx_t *ri, const gadget_t *g)
     if (!ri || !g || g->length == 0) return;
 
     if (is_syscall_only(g)) {
-        /* Same dedup logic as add_addr but we also want to
-         * remember whether this specific syscall gadget starts
-         * at an ENDBR landing pad — CET-aware resolver needs
-         * it the same way it needs the per-reg flag. */
         if (ri->syscall_count < REGIDX_MAX_PER) {
             int dup = 0;
             for (uint16_t i = 0; i < ri->syscall_count; i++) {
                 if (ri->syscall_addrs[i] == g->vaddr) { dup = 1; break; }
             }
             if (!dup) {
+                gadget_effect_t ef;
+                gadget_effect_compute(g, &ef);
                 uint16_t idx = ri->syscall_count++;
-                ri->syscall_addrs[idx]       = g->vaddr;
-                ri->syscall_endbr_start[idx] = (uint8_t)cet_starts_endbr(g);
+                ri->syscall_addrs[idx]        = g->vaddr;
+                ri->syscall_endbr_start[idx]  = (uint8_t)cet_starts_endbr(g);
+                ri->syscall_shstk_safe[idx]   = (uint8_t)!cet_shstk_blocked(g);
+                ri->syscall_pac_hostile[idx]  = (uint8_t)(ef.has_pac_auth ? 1 : 0);
             }
         }
         return;
@@ -395,33 +424,60 @@ regidx_find_multi_exact(const regidx_t *ri, uint32_t needed)
     return NULL;
 }
 
+/* v5.4.0: mitigation-aware scoring. Each candidate gets a score
+ * summing three weighted penalties against image mitigations.
+ * Higher is better; ties broken by observation order (smaller
+ * index wins). cet_aware is a summary "any mitigation on" flag. */
+static int
+score_candidate(const regidx_t *ri, int endbr_ok, int shstk_ok,
+                int pac_free)
+{
+    int s = 0;
+    if (ri->cet_ibt_required)   s += endbr_ok ? 8 : 0;
+    if (ri->cet_shstk_required) s += shstk_ok ? 4 : 0;
+    if (ri->pac_required)       s += pac_free ? 2 : 0;
+    return s;
+}
+
 int
 regidx_pick_index(const regidx_t *ri, int reg, int cet_aware)
 {
+    (void)cet_aware;
     if (!ri || reg < 0 || reg >= REGIDX_MAX_REGS) return -1;
     if (ri->counts[reg] == 0) return -1;
-    if (cet_aware) {
-        for (uint16_t i = 0; i < ri->counts[reg]; i++) {
-            if (ri->endbr_start[reg][i]) return (int)i;
+    int best_idx   = 0;
+    int best_score = -1;
+    for (uint16_t i = 0; i < ri->counts[reg]; i++) {
+        int s = score_candidate(ri,
+                                ri->endbr_start[reg][i],
+                                ri->shstk_safe[reg][i],
+                                !ri->pac_hostile[reg][i]);
+        if (s > best_score) {
+            best_score = s;
+            best_idx   = (int)i;
         }
-        /* No endbr-start gadget exists for this register. Fall
-         * through to the first-observed as a last-ditch pick —
-         * the resolver emits a chain-survives-cet warning at
-         * report time when this happens. */
     }
-    return 0;
+    return best_idx;
 }
 
 int
 regidx_pick_syscall_index(const regidx_t *ri, int cet_aware)
 {
+    (void)cet_aware;
     if (!ri || ri->syscall_count == 0) return -1;
-    if (cet_aware) {
-        for (uint16_t i = 0; i < ri->syscall_count; i++) {
-            if (ri->syscall_endbr_start[i]) return (int)i;
+    int best_idx   = 0;
+    int best_score = -1;
+    for (uint16_t i = 0; i < ri->syscall_count; i++) {
+        int s = score_candidate(ri,
+                                ri->syscall_endbr_start[i],
+                                ri->syscall_shstk_safe[i],
+                                !ri->syscall_pac_hostile[i]);
+        if (s > best_score) {
+            best_score = s;
+            best_idx   = (int)i;
         }
     }
-    return 0;
+    return best_idx;
 }
 
 const regidx_multi_t *

@@ -76,6 +76,40 @@ int arm64_is_bti(uint32_t insn)
     return (insn & 0xFFFFFF3Fu) == 0xD503241Fu;
 }
 
+arm64_pac_t arm64_pac_kind(uint32_t insn)
+{
+    /* Data-processing (1 source) encoding, ARM ARM C6.2.
+     * PAC* / AUT* share the top bits 1101 1010 1100 0001.
+     *
+     * Specifically for the register-variant group the encoding
+     * is:   1101 1010 1100 0001 0 z 00 ab Rn Rd
+     * where z (bit 10): 0 = PAC, 1 = AUT
+     *       ab (bits 12:11): 00=IA, 01=IB, 10=DA, 11=DB
+     *
+     * Concrete 32-bit values:
+     *   PACIA Xd, Xn: 1101 1010 1100 0001 0 0 00 00 Rn Rd  = 0xDAC10000 | ...
+     *   PACIB Xd, Xn: ... 01 ... = 0xDAC10400
+     *   PACDA Xd, Xn: ... 10 ... = 0xDAC10800
+     *   PACDB Xd, Xn: ... 11 ... = 0xDAC10C00
+     *   AUTIA Xd, Xn:             = 0xDAC11000
+     *   AUTIB Xd, Xn:             = 0xDAC11400
+     *   AUTDA Xd, Xn:             = 0xDAC11800
+     *   AUTDB Xd, Xn:             = 0xDAC11C00
+     * Mask: 0xFFFFFC00 covers the opcode bits, Rn + Rd vary. */
+    uint32_t top = insn & 0xFFFFFC00u;
+    switch (top) {
+    case 0xDAC10000u: return ARM64_PAC_PACIA;
+    case 0xDAC10400u: return ARM64_PAC_PACIB;
+    case 0xDAC10800u: return ARM64_PAC_PACDA;
+    case 0xDAC10C00u: return ARM64_PAC_PACDB;
+    case 0xDAC11000u: return ARM64_PAC_AUTIA;
+    case 0xDAC11400u: return ARM64_PAC_AUTIB;
+    case 0xDAC11800u: return ARM64_PAC_AUTDA;
+    case 0xDAC11C00u: return ARM64_PAC_AUTDB;
+    }
+    return ARM64_PAC_NONE;
+}
+
 /* ---------- rendering ---------- */
 
 static int render_svc(char *buf, size_t buflen, uint32_t insn)

@@ -205,26 +205,44 @@ static int resolve_text(const recipe_t *r, const regidx_t *idx,
                 continue;
             }
 
-            /* v5.3.0: CET-aware pick. When the image sets
-             * cet_ibt_required, prefer endbr-start gadgets so
-             * the chain survives hardware IBT checks. Falls
-             * back to first-observed on registers where no
-             * endbr-start gadget exists — chain may not survive
-             * CET, we annotate that below. */
-            int cet_aware = idx->cet_ibt_required;
-            int pidx = regidx_pick_index(idx, s->reg, cet_aware);
+            /* v5.3.0 + v5.4.0: mitigation-aware pick. Prefer
+             * gadgets that survive whichever of IBT/SHSTK/PAC
+             * the image requires. Each mitigation contributes
+             * an annotation; a gadget that satisfies all gets
+             * the tightest tag, one that fails any gets FAIL. */
+            int pidx = regidx_pick_index(idx, s->reg, 0);
             if (pidx < 0) pidx = 0;
             uint64_t g_addr = idx->addrs[s->reg][pidx];
             uint32_t stack  = idx->stack_consumed[s->reg][pidx];
-            int      endbr  = idx->endbr_start[s->reg][pidx];
-            const char *tag = cet_aware
-                             ? (endbr ? " [cet: endbr-start]"
-                                      : " [cet: FAIL — no endbr-start]")
-                             : "";
+            int endbr       = idx->endbr_start[s->reg][pidx];
+            int shstk_safe  = idx->shstk_safe[s->reg][pidx];
+            int pac_hostile = idx->pac_hostile[s->reg][pidx];
+
+            char tag[96];
+            tag[0] = '\0';
+            int fail = 0;
+            if (idx->cet_ibt_required && !endbr) {
+                fail = 1;
+                snprintf(tag, sizeof tag,
+                         " [cet: FAIL — no endbr-start]");
+            } else if (idx->cet_shstk_required && !shstk_safe) {
+                fail = 1;
+                snprintf(tag, sizeof tag,
+                         " [shstk: FAIL — blocked]");
+            } else if (idx->pac_required && pac_hostile) {
+                fail = 1;
+                snprintf(tag, sizeof tag,
+                         " [pac: FAIL — AUT* needs sign oracle]");
+            } else if (idx->cet_ibt_required ||
+                       idx->cet_shstk_required ||
+                       idx->pac_required) {
+                snprintf(tag, sizeof tag,
+                         " [mitigations: survives]");
+            }
             fprintf(f,
                 "0x%016" PRIx64 "  # pop %s ; ret  (stack: %u bytes)%s\n",
                 g_addr, rn, (unsigned)stack, tag);
-            if (cet_aware && !endbr) missing++;
+            if (fail) missing++;
             committed |= 1u << s->reg;
             if (s->is_literal) {
                 fprintf(f, "0x%016" PRIx64 "  # %s = 0x%" PRIx64 "\n",
@@ -253,15 +271,32 @@ static int resolve_text(const recipe_t *r, const regidx_t *idx,
                 const char *mnemo = "syscall";
                 if (machine == EM_AARCH64)    mnemo = "svc";
                 else if (machine == EM_RISCV) mnemo = "ecall";
-                int cet_aware = idx->cet_ibt_required;
-                int sidx = regidx_pick_syscall_index(idx, cet_aware);
+                int sidx = regidx_pick_syscall_index(idx, 0);
                 if (sidx < 0) sidx = 0;
-                int endbr = idx->syscall_endbr_start[sidx];
-                const char *tag = cet_aware
-                                 ? (endbr ? " [cet: endbr-start]"
-                                          : " [cet: FAIL — no endbr-start]")
-                                 : "";
-                if (cet_aware && !endbr) missing++;
+                int endbr       = idx->syscall_endbr_start[sidx];
+                int shstk_safe  = idx->syscall_shstk_safe[sidx];
+                int pac_hostile = idx->syscall_pac_hostile[sidx];
+                char tag[96]; tag[0] = '\0';
+                int fail = 0;
+                if (idx->cet_ibt_required && !endbr) {
+                    fail = 1;
+                    snprintf(tag, sizeof tag,
+                             " [cet: FAIL — no endbr-start]");
+                } else if (idx->cet_shstk_required && !shstk_safe) {
+                    fail = 1;
+                    snprintf(tag, sizeof tag,
+                             " [shstk: FAIL — blocked]");
+                } else if (idx->pac_required && pac_hostile) {
+                    fail = 1;
+                    snprintf(tag, sizeof tag,
+                             " [pac: FAIL — AUT* needs sign oracle]");
+                } else if (idx->cet_ibt_required ||
+                           idx->cet_shstk_required ||
+                           idx->pac_required) {
+                    snprintf(tag, sizeof tag,
+                             " [mitigations: survives]");
+                }
+                if (fail) missing++;
                 fprintf(f, "0x%016" PRIx64 "  # %s%s\n",
                         idx->syscall_addrs[sidx], mnemo, tag);
             }
@@ -270,17 +305,20 @@ static int resolve_text(const recipe_t *r, const regidx_t *idx,
         }
     }
 
-    /* v5.3.0: chain-level CET summary. When the target image
-     * requires IBT and the resolver used even one non-endbr-
-     * start gadget, the runtime chain will die at the first
-     * such gadget. Surface that loudly, separately from the
-     * generic "missing" count. */
-    if (idx->cet_ibt_required) {
+    /* v5.3.0 + v5.4.0: chain-level mitigation summary. Each
+     * active mitigation gets a line; chain survives only if
+     * no gadget failed the FAIL annotation above (missing
+     * counts such failures alongside real missing gadgets). */
+    if (idx->cet_ibt_required || idx->cet_shstk_required ||
+        idx->pac_required) {
+        char active[64]; active[0] = '\0';
+        if (idx->cet_ibt_required)   strcat(active, "IBT ");
+        if (idx->cet_shstk_required) strcat(active, "SHSTK ");
+        if (idx->pac_required)       strcat(active, "PAC ");
         fprintf(f,
-"# cet-posture: image requires IBT%s%s. Gadgets without "
-"[cet: endbr-start] will trigger #CP and terminate the process.\n",
-            idx->cet_shstk_required ? " + SHSTK" : "",
-            missing ? " — chain NOT survivable" : " — chain survives");
+"# mitigations: image requires %s— chain %s.\n",
+            active,
+            missing ? "NOT survivable" : "survives");
     }
 
     if (missing) {

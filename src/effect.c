@@ -120,6 +120,20 @@ static int compute_a64(const gadget_t *g, gadget_effect_t *out)
     while (p + 4 <= g->length) {
         uint32_t insn = arm64_read_insn(g->bytes + p);
 
+        /* v5.4.0: PAC classification. AUT* inside a gadget
+         * body means the chain needs a valid sign oracle or
+         * dies to FPAC. PAC* inside = sign oracle primitive. */
+        arm64_pac_t pac = arm64_pac_kind(insn);
+        if (pac != ARM64_PAC_NONE) {
+            if (pac >= ARM64_PAC_AUTIA && pac <= ARM64_PAC_AUTDB) {
+                out->has_pac_auth = 1;
+            } else {
+                out->has_pac_sign = 1;
+            }
+            p += 4;
+            continue;
+        }
+
         /* ldp <Xt1>, <Xt2>, [sp], #imm  post-index form
          *   1010 1000 11 | imm7 | Rt2 | Rn=11111(sp) | Rt1  */
         if ((insn & 0xffc003e0u) == 0xa8c003e0u) {
@@ -133,8 +147,15 @@ static int compute_a64(const gadget_t *g, gadget_effect_t *out)
             p += 4;
             continue;
         }
-        /* ret (xn) — generally ret x30 */
+        /* ret (xn) — generally ret x30. RETAA/RETAB also implicit
+         * PAC auth on the return address; flag it too. */
         if (arm64_is_terminator(insn)) {
+            /* RETAA = 0xD65F0BFF, RETAB = 0xD65F0FFF — the
+             * Ab-authenticated variants perform an AUTIA/AUTIB
+             * implicitly on x30. Mark them. */
+            if ((insn & 0xFFFFFBFFu) == 0xD65F0BFFu) {
+                out->has_pac_auth = 1;
+            }
             term = GADGET_TERM_RET;
             if ((insn & 0xFFE0001Fu) == 0xD4000001u) {
                 term = GADGET_TERM_SYSCALL;

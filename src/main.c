@@ -750,6 +750,10 @@ loaded:
              * strictest posture across inputs. */
             ri.cet_ibt_required   |= (uint8_t)ibt;
             ri.cet_shstk_required |= (uint8_t)shstk;
+            /* v5.4.0: arm64e PAC. Set when any input is marked
+             * macho_arm64e (the Mach-O loader records it based
+             * on cpusubtype). */
+            if (e.macho_arm64e) ri.pac_required = 1;
             /* --cet-aware / --no-cet-aware override auto-detect. */
             if (cet_aware_override == 1) ri.cet_ibt_required   = 1;
             if (cet_aware_override == 0) ri.cet_ibt_required   = 0;

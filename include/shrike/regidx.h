@@ -50,6 +50,8 @@ typedef struct {
      * per-reg endbr_start: set iff the multi-pop gadget's
      * address is a valid IBT landing pad. */
     uint8_t  endbr_start;
+    uint8_t  shstk_safe;
+    uint8_t  pac_hostile;
 } regidx_multi_t;
 
 typedef struct {
@@ -67,11 +69,23 @@ typedef struct {
      * for the same register — non-endbr gadgets die to the
      * hardware IBT check at runtime. */
     uint8_t    endbr_start[REGIDX_MAX_REGS][REGIDX_MAX_PER];
+    /* v5.4.0: mitigation-survival flags per observed gadget.
+     * shstk_safe: gadget's terminator isn't a bare RET that
+     *   would pop from the shadow stack (i.e. terminator is
+     *   syscall / indirect-jmp / ret-gated-by-auth). 1 means
+     *   safe under SHSTK.
+     * pac_hostile: gadget contains an AUT* instruction that
+     *   would fault without a valid sign oracle. 1 means the
+     *   chain needs PAC bypass to use this gadget. */
+    uint8_t    shstk_safe[REGIDX_MAX_REGS][REGIDX_MAX_PER];
+    uint8_t    pac_hostile[REGIDX_MAX_REGS][REGIDX_MAX_PER];
     uint16_t   counts[REGIDX_MAX_REGS];
     uint16_t   machine;
     /* terminator helpers */
     uint64_t   syscall_addrs[REGIDX_MAX_PER];
     uint8_t    syscall_endbr_start[REGIDX_MAX_PER];
+    uint8_t    syscall_shstk_safe[REGIDX_MAX_PER];
+    uint8_t    syscall_pac_hostile[REGIDX_MAX_PER];
     uint16_t   syscall_count;
 
     /* v1.5.2: multi-pop index. */
@@ -83,6 +97,11 @@ typedef struct {
      * reads them to decide whether to prefer endbr gadgets. */
     uint8_t    cet_ibt_required;   /* .note.gnu.property IBT bit */
     uint8_t    cet_shstk_required; /* .note.gnu.property SHSTK bit */
+    /* v5.4.0: arm64e PAC is on. Source: Mach-O cpusubtype ==
+     * CPU_SUBTYPE_ARM64E sets macho_arm64e on the elf64_t;
+     * main.c ORs it here. Resolver avoids pac_hostile gadgets
+     * (AUT* bodies) when this is set. */
+    uint8_t    pac_required;
 } regidx_t;
 
 void regidx_init(regidx_t *ri, uint16_t machine);
@@ -127,18 +146,18 @@ const regidx_multi_t *regidx_find_multi(const regidx_t *ri,
                                         uint32_t committed,
                                         int      strict_cover);
 
-/* v5.3.0: CET-aware picker. Returns the preferred index into
- * ri->addrs[r][] for the given register. When `cet_aware` is
- * non-zero and the register has any endbr-starting entries,
- * returns the first such. Otherwise returns 0 (the first-
- * observed, matching the pre-5.3 behaviour).
+/* v5.3.0 + v5.4.0: mitigation-aware picker. Returns the
+ * preferred index into ri->addrs[r][] for the given register.
  *
- * Callers use it as:
+ * Selection priority when the matching flags on the regidx
+ * are set:
+ *   1. prefer endbr_start == 1 if cet_ibt_required
+ *   2. prefer shstk_safe == 1 if cet_shstk_required
+ *   3. prefer pac_hostile == 0 if pac_required
+ *   4. first-observed wins among ties
  *
- *   int idx = regidx_pick_index(ri, reg, cet_aware);
- *   uint64_t addr = ri->addrs[reg][idx];
- *
- * Returns -1 if the register has no observed gadgets. */
+ * When the image doesn't require any of these, returns 0
+ * (pre-5.3 behaviour). -1 if the register has no entries. */
 int regidx_pick_index(const regidx_t *ri, int reg, int cet_aware);
 
 /* Same for syscall terminators. -1 if none. */
