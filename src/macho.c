@@ -97,6 +97,13 @@ static int in_bounds(const elf64_t *e, uint64_t off, uint64_t len)
 
 static int parse(elf64_t *e);
 
+/* NOTE: this spent two evenings figuring out. Apple's otool
+ * happily parses fat binaries where the outer fat_arch entries
+ * and the inner mach_header disagree on cputype. We refuse
+ * them — it makes the loader simpler and the pathological case
+ * (malformed fat as attack surface) goes away. If a real
+ * shipping binary trips this check, file an issue. */
+
 /* Resolve a fat/universal image to a single slice and re-point
  * e->map / e->size at it before calling into the thin parser.
  * Ownership of the outer mmap stays on e->owns — the inner slice

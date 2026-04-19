@@ -131,11 +131,64 @@ shrike/
 - [checkhard](https://github.com/bauratynov/checkhard) — ELF
   hardening auditor.
 
+## Prior art — honest comparison
+
+- **[ROPgadget](https://github.com/JonathanSalwan/ROPgadget)**
+  (Salwan, 2011). Python. Widely used in CTFs. shrike borrowed
+  its category taxonomy. ROPgadget's unique-dedup misses the
+  xor-zero idiom; shrike's `--canonical` handles it.
+- **[ropr](https://github.com/Ben-Lichtman/ropr)** (2022).
+  Rust, Apache-2.0. **Fastest Linux x86_64 scanner I've
+  measured** — roughly 2.7x faster than shrike on glibc
+  (see `bench/cross-tool.md`). They SIMD-prefilter terminator
+  bytes; we don't. Different tradeoff: ropr optimises for
+  speed, shrike for semantic depth (effect IR, SMT proof,
+  chain synthesis).
+- **[rp++](https://github.com/0vercl0k/rp)** (0vercl0k, 2013).
+  C++. Great PE support, widely used on Windows. shrike chose
+  pure C99 to keep the binary tiny and avoid a C++ runtime
+  in scratch containers.
+- **[Ropper](https://github.com/sashs/Ropper)** (Schirra, 2014).
+  Python. Similar scope to ROPgadget; Python dependency chain
+  is heavier.
+- **[angrop](https://github.com/angr/angrop)**. Full-symbolic
+  scanner inside the angr framework. Produces optimal chains
+  via SMT. ~100x slower than shrike for scanning but does
+  things we can't (multi-constraint chain solving).
+
 ## References
 
-- Shacham, *The Geometry of Innocent Flesh on the Bone*, CCS 2007
-- Intel SDM Vol 2/3A · ARM ARM C3/C4/C6 · SARIF 2.1.0 OASIS spec
-- Predecessors: [ROPgadget](https://github.com/JonathanSalwan/ROPgadget), [Ropper](https://github.com/sashs/Ropper), [rp++](https://github.com/0vercl0k/rp)
+### Papers
+- Shacham, H. *The Geometry of Innocent Flesh on the Bone:
+  Return-into-libc without Function Calls*. CCS 2007 — the
+  foundational ROP paper.
+- Bletsch, T. et al. *Jump-Oriented Programming: A New Class
+  of Code-Reuse Attack*. ASIACCS 2011 — shrike's JOP
+  dispatcher shape comes from here.
+- Hu, H. et al. *Data-Oriented Programming: On the
+  Expressiveness of Non-Control Data Attacks*. S&P 2016 —
+  DOP gadget detection in v2.1.4.
+- Schuster, F. et al. *Counterfeit Object-Oriented
+  Programming*. S&P 2015 — COOP isn't implemented yet but
+  informs the COP dispatcher classifier.
+
+### Specs
+- Intel SDM Vol 2/3A (January 2026 revision)
+- ARM ARM C3/C4/C6
+- RISC-V Unprivileged ISA 20240411 + Privileged ISA 20240411
+- PE/COFF Specification (aka.ms/PECOFF)
+- Apple's Mach-O spec (via LIEF docs; Apple's own docs are sparse)
+- SARIF 2.1.0 OASIS spec
+
+### Implementation references
+- [LIEF](https://github.com/lief-project/LIEF) — best "what
+  does this PE field mean in practice" reference.
+- [Capstone](https://github.com/capstone-engine/capstone) —
+  the opaque-handle C API shape we modelled `<shrike/shrike.h>`
+  on.
+- [liblzma](https://tukaani.org/xz/) — versioning scheme
+  (decimal-packed major*10M + minor*10K + patch*10) borrowed
+  for `SHRIKE_VERSION` macros.
 
 ## License
 

@@ -73,6 +73,12 @@ static const uint8_t prim_map[256] = {
  * 0x0F two-byte opcode classifier.
  * Returns 0 on success with *has_modrm / *imm set; returns -1 on
  * invalid opcode (so far only VEX/EVEX prefixes hit this).
+ *
+ * FIXME(2026-04-02): this classifier doesn't disambiguate the
+ * 0x38 / 0x3A three-byte escape path. Most 3-byte opcodes happen
+ * to follow the same (modrm=1, imm=0) default, so we get lucky.
+ * When we add AVX2 VPCMPISTR etc. it'll bite. Keep the default
+ * but watch for miscounts via the fuzz harness.
  * ------------------------------------------------------------------ */
 static int classify_0f(uint8_t op, int op66, int rex_w,
                        int *has_modrm, int *imm)

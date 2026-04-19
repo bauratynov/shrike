@@ -178,6 +178,14 @@ static int parse(elf64_t *e)
         if (raw_size == 0 || raw_ptr == 0)    continue;
         if (!in_bounds(e, raw_ptr, raw_size)) continue;
 
+        /* XXX: we don't scan overlays (bytes past the last
+         * section's PointerToRawData + SizeOfRawData). For
+         * signed binaries that's the certificate blob — not
+         * code. For packers (UPX / Themida), the unpacked
+         * payload can live in the overlay and we'll miss it.
+         * Users who need packer coverage should run their
+         * unpacker first. See LIMITATIONS.md. */
+
         /* The Windows loader zero-fills the tail when VirtualSize
          * exceeds SizeOfRawData. Gadget-wise those bytes are noise,
          * so we scan only the on-disk range. */
